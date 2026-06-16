@@ -1,0 +1,7 @@
+graph.db
+*.db
+__pycache__
+backend/
+scripts/
+*.pyc
+.git

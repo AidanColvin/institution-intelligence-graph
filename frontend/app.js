@@ -1,277 +1,343 @@
-/* UNC Research Footprint Graph — client-side matcher.
-   Loads graph.json (precomputed at build time) and answers both questions
-   entirely in the browser: "is company X a UNC partner?" (evidence mode) and
-   "which UNC units fit topic Y?" (topical mode). No backend, no API keys. */
+/* UNC Research Intelligence — client-side graph explorer.
+   Loads graph.json from the same origin; runs matching entirely in the browser.
+   API_BASE can optionally point to the Vercel backend for /match calls. */
 
-const STOPWORDS = new Set("the a an and or of in to for with on at by from is are was inc llc corp co ltd company group holdings international plc the study research".split(" "));
-const EDGE_LABEL = {grant:"Grant", paper:"Paper", trial:"Clinical trial", contract:"Contract", patent:"Patent"};
+const API_BASE = "https://institution-intelligence-graph.vercel.app";
+const GRAPH_URL = "graph.json";
+
+const STOPWORDS = new Set("the a an and or of in to for with on at by from is are was inc llc corp co ltd company group holdings international plc study research".split(" "));
+const EDGE_LABEL = { grant:"Grant", paper:"Paper", trial:"Clinical trial", contract:"Contract", patent:"Patent" };
 
 let GRAPH = null;
 let UNIT_BY_ID = {};
-let COMPANY_INDEX = [];   // [{norm, company}]
+let COMPANY_INDEX = [];
 
-// ---------- helpers ----------
-const $ = (sel) => document.querySelector(sel);
-const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+const $ = (s) => document.querySelector(s);
 const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])));
-const fmtUSD = (n) => { if (!n) return "—"; if (n >= 1e9) return "$" + (n/1e9).toFixed(1) + "B"; if (n >= 1e6) return "$" + (n/1e6).toFixed(1) + "M"; if (n >= 1e3) return "$" + (n/1e3).toFixed(0) + "K"; return "$" + n; };
+const fmtUSD = (n) => { if (!n) return "—"; if (n>=1e9) return "$"+(n/1e9).toFixed(1)+"B"; if (n>=1e6) return "$"+(n/1e6).toFixed(1)+"M"; if (n>=1e3) return "$"+(n/1e3).toFixed(0)+"K"; return "$"+n; };
 
-function normName(s){
+function normName(s) {
   return (s||"").toLowerCase()
     .replace(/\b(inc|llc|corp|co|ltd|plc|lp|incorporated|corporation|limited|company)\b\.?/g," ")
     .replace(/[^\w\s&]/g," ").replace(/\s+/g," ").trim();
 }
-function tokenize(s){
+function tokenize(s) {
   return new Set((s||"").toLowerCase().replace(/[^\w\s]/g," ").split(/\s+/)
     .filter(t => t.length >= 3 && !STOPWORDS.has(t)));
 }
 
-// ---------- load ----------
-async function load(){
-  try{
-    const res = await fetch("graph.json", {cache:"no-cache"});
-    if(!res.ok) throw new Error("HTTP " + res.status);
+// ── load ─────────────────────────────────────────────────────────────────────
+
+async function load() {
+  try {
+    const res = await fetch(GRAPH_URL, { cache: "no-cache" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
     GRAPH = await res.json();
-  }catch(e){
-    $("#statchips").innerHTML = `<span class="chip">graph.json not found — run the build &amp; export</span>`;
-    console.error(e); return;
+  } catch(e) {
+    console.error("Failed to load graph.json:", e);
+    $("#nav-stats").innerHTML = `<span class="nav-stat" style="color:#c00">graph.json not found — run the build &amp; export</span>`;
+    return;
   }
   UNIT_BY_ID = Object.fromEntries(GRAPH.units.map(u => [u.id, u]));
-  COMPANY_INDEX = GRAPH.companies.map(c => ({norm: normName(c.name), company: c}));
-  renderStats();
+  COMPANY_INDEX = GRAPH.companies.map(c => ({ norm: normName(c.name), company: c }));
+
+  renderNavStats();
   renderUnitGrid();
   renderCompanyChips();
   wireSearch();
-}
-
-// ---------- stats ----------
-function renderStats(){
-  const c = GRAPH.meta.counts || {};
-  const chips = [
-    ["Schools &amp; units", GRAPH.meta.n_units_with_data],
-    ["Partner companies", GRAPH.meta.n_companies],
-    ["Edges", c.edges],
-    ["Grants", c.nih_grants != null ? (c.nih_grants + (c.nsf_awards||0)) : null],
-    ["Papers", c.crossref_papers],
-    ["Trials", c.clinical_trials],
-    ["Faculty", c.faculty],
-  ].filter(([,v]) => v != null);
-  $("#statchips").innerHTML = chips.map(([k,v]) => `<span class="chip"><b>${Number(v).toLocaleString()}</b> ${k}</span>`).join("");
   $("#built-at").textContent = GRAPH.meta.built_at || "—";
-  if(GRAPH.meta.counts) {
-    $("#unit-count").textContent = `${GRAPH.units.length} units mapped · anchored on ROR ${GRAPH.meta.unc_ror}`;
-  }
+  const total = GRAPH.units.filter(u => u.id !== "unc:root").length;
+  $("#unit-count").textContent = `${total} units mapped · anchored on ROR ${GRAPH.meta.unc_ror || "0130frc33"}`;
 }
 
-// ---------- search ----------
-function wireSearch(){
+// ── nav stats ─────────────────────────────────────────────────────────────────
+
+function renderNavStats() {
+  const c = GRAPH.meta.counts || {};
+  const stats = [
+    [GRAPH.meta.n_companies, "companies"],
+    [c.edges, "connections"],
+    [c.faculty, "faculty"],
+  ].filter(([v]) => v != null);
+  $("#nav-stats").innerHTML = stats.map(([v,l]) =>
+    `<span class="nav-stat"><b>${Number(v).toLocaleString()}</b> ${l}</span>`
+  ).join("");
+}
+
+// ── search ────────────────────────────────────────────────────────────────────
+
+function wireSearch() {
   const input = $("#q");
-  let t;
-  input.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => runSearch(input.value), 120); });
-  document.querySelectorAll(".hint").forEach(b =>
-    b.addEventListener("click", () => { input.value = b.dataset.q; runSearch(b.dataset.q); input.focus(); }));
+  const clearBtn = $("#search-clear");
+  let timer;
+
+  input.addEventListener("input", () => {
+    clearBtn.hidden = !input.value;
+    clearTimeout(timer);
+    timer = setTimeout(() => runSearch(input.value), 140);
+  });
+  clearBtn.addEventListener("click", () => {
+    input.value = "";
+    clearBtn.hidden = true;
+    $("#results").hidden = true;
+    input.focus();
+  });
+  document.querySelectorAll(".pill").forEach(b =>
+    b.addEventListener("click", () => {
+      input.value = b.dataset.q;
+      clearBtn.hidden = false;
+      runSearch(b.dataset.q);
+      input.focus();
+    })
+  );
 }
 
-function runSearch(query){
+function runSearch(query) {
+  query = (query || "").trim();
   const results = $("#results");
-  const evPanel = $("#evidence-panel");
+  const evPanel  = $("#evidence-panel");
   const topPanel = $("#topical-panel");
-  query = (query||"").trim();
-  if(!query){ results.hidden = true; return; }
+  const noRes    = $("#no-results");
+
+  if (!query) { results.hidden = true; return; }
   results.hidden = false;
 
-  // Evidence mode: company lookup
   const company = matchCompany(query);
-  if(company){ evPanel.hidden = false; evPanel.innerHTML = renderEvidence(company); }
-  else { evPanel.hidden = true; }
-
-  // Topical mode: keyword overlap against unit profiles
   const topical = matchTopical(query);
-  if(topical.length){ topPanel.hidden = false; topPanel.innerHTML = renderTopical(query, topical); }
-  else { topPanel.hidden = true; }
 
-  if(!company && !topical.length){
-    evPanel.hidden = false;
-    evPanel.innerHTML = `<div class="empty-state">No partnership records or topical matches for “${esc(query)}”.<br><span class="small">This graph covers companies linked to UNC by a public record. Try a topic like “oncology” or a known partner.</span></div>`;
+  evPanel.hidden  = !company;
+  topPanel.hidden = !topical.length;
+  noRes.hidden    = !!(company || topical.length);
+
+  if (company) evPanel.innerHTML = renderEvidence(company);
+  if (topical.length) topPanel.innerHTML = renderTopical(query, topical);
+
+  if (!company && !topical.length) {
+    $("#no-results-msg").textContent = `No partnership records or topical matches for "${query}". Try a topic like "oncology" or a known partner like "Pfizer".`;
   }
 }
 
-function matchCompany(query){
+function matchCompany(query) {
   const q = normName(query);
-  if(q.length < 2) return null;
+  if (q.length < 2) return null;
   let exact = COMPANY_INDEX.find(c => c.norm === q);
-  if(exact) return exact.company;
-  // substring (query within company name or vice versa), prefer most edges
+  if (exact) return exact.company;
   const subs = COMPANY_INDEX
     .filter(c => c.norm.includes(q) || q.includes(c.norm))
     .sort((a,b) => b.company.total_edges - a.company.total_edges);
   return subs.length ? subs[0].company : null;
 }
 
-function matchTopical(query){
+function matchTopical(query) {
   const q = tokenize(query);
-  if(!q.size) return [];
+  if (!q.size) return [];
   const out = [];
-  for(const u of GRAPH.units){
+  for (const u of GRAPH.units) {
     const kw = u.keywords || [];
-    if(!kw.length) continue;
+    if (!kw.length) continue;
     const kwSet = new Set(kw);
     const hits = [...q].filter(t => kwSet.has(t));
-    if(!hits.length) continue;
+    if (!hits.length) continue;
     const score = hits.length / Math.sqrt(q.size * kw.length);
-    out.push({unit:u, score, hits});
+    out.push({ unit: u, score, hits });
   }
-  return out.sort((a,b) => b.score - a.score).slice(0,6);
+  return out.sort((a,b) => b.score - a.score).slice(0, 6);
 }
 
-// ---------- render: evidence ----------
-function renderEvidence(co){
-  const cikLink = co.cik
-    ? `<a class="cik-link" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${esc(co.cik)}&type=10-K" target="_blank" rel="noopener">SEC CIK ${esc(co.cik)} ↗</a>`
-    : "";
-  const rows = co.units.map(u => renderUnitEvidence(u)).join("");
+// ── render: evidence ─────────────────────────────────────────────────────────
+
+function renderEvidence(co) {
+  const cikHtml = co.cik
+    ? `<a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${esc(co.cik)}&type=10-K" target="_blank" rel="noopener">SEC CIK ${esc(co.cik)} ↗</a>`
+    : "not in SEC filer registry";
+  const rows = (co.units || []).map(u => renderUnitEvRow(u)).join("");
   return `
-    <div class="panel-head">
-      <div>
-        <div class="co-title">
-          <span class="name">${esc(co.name)}</span>
-          <span class="badge ${co.confidence}">${co.confidence}</span>
+    <div class="result-card">
+      <div class="rc-header">
+        <div>
+          <div class="rc-company-name">${esc(co.name)}</div>
+          <div class="rc-meta">
+            ${co.total_edges} public record${co.total_edges===1?"":"s"} across ${(co.units||[]).length} UNC unit${(co.units||[]).length===1?"":"s"} · ${cikHtml}
+          </div>
         </div>
-        <div class="sub">${co.total_edges} public record${co.total_edges===1?"":"s"} linking to ${co.units.length} UNC unit${co.units.length===1?"":"s"} · ${cikLink || "not matched to a public SEC filer"}</div>
+        <span class="badge ${co.confidence}">${co.confidence}</span>
       </div>
-      <span class="badge topical">Partnership evidence</span>
-    </div>
-    <div class="panel-body">${rows}</div>`;
-}
-
-function renderUnitEvidence(u){
-  const unit = UNIT_BY_ID[u.unit_id] || {name:u.unit_id};
-  const maxScore = 20;
-  const pct = Math.min(100, (u.score / maxScore) * 100);
-  const counts = Object.entries(u.counts).map(([t,n]) =>
-    `<span class="count">${n} ${EDGE_LABEL[t]||t}${n>1?"s":""}</span>`).join("");
-  const samples = (u.samples||[]).map(s => `
-    <li>
-      <span class="ev-type">${esc(s.type)}</span>
-      <span><a class="ev-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a>${s.date ? ` <span class="muted">· ${esc(s.date)}</span>` : ""}</span>
-    </li>`).join("");
-  return `
-    <div class="unit-row">
-      <div class="unit-row-top">
-        <span class="unit-name">${esc(unit.name)}</span>
-        <span class="badge ${u.confidence}">${u.confidence}</span>
-        <div class="score-bar"><div class="score-fill" style="width:${pct}%"></div></div>
-        <span class="score-num">${u.score.toFixed(0)}</span>
-      </div>
-      <div class="count-chips">${counts}</div>
-      <ul class="evidence-list">${samples}</ul>
+      <div class="rc-body">${rows}</div>
     </div>`;
 }
 
-// ---------- render: topical ----------
-function renderTopical(query, items){
-  const rows = items.map(({unit, score, hits}) => {
+function renderUnitEvRow(u) {
+  const unit = UNIT_BY_ID[u.unit_id] || { name: u.unit_id };
+  const pct = Math.min(100, (u.score / 20) * 100);
+  const counts = Object.entries(u.counts || {}).map(([t,n]) =>
+    `<span class="ev-count">${n} ${EDGE_LABEL[t]||t}${n>1?"s":""}</span>`).join("");
+  const samples = (u.samples || []).slice(0, 3).map(s => `
+    <li>
+      <span class="ev-type-tag">${esc(s.type)}</span>
+      <a class="ev-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a>
+      ${s.date ? `<span class="ev-date">· ${esc(s.date)}</span>` : ""}
+    </li>`).join("");
+  return `
+    <div class="unit-ev">
+      <div class="unit-ev-top">
+        <span class="unit-ev-name">${esc(unit.name)}</span>
+        <div class="score-track"><div class="score-fill" style="width:${pct}%"></div></div>
+        <span class="score-val">${u.score.toFixed(0)}</span>
+        <span class="badge ${u.confidence}">${u.confidence}</span>
+      </div>
+      <div class="ev-counts">${counts}</div>
+      <ul class="ev-samples">${samples}</ul>
+    </div>`;
+}
+
+// ── render: topical ──────────────────────────────────────────────────────────
+
+function renderTopical(query, items) {
+  const rows = items.map(({ unit, score, hits }) => {
     const hitSet = new Set(hits);
-    const kwTags = (unit.keywords||[]).slice(0,14).map(k =>
+    const kws = (unit.keywords || []).slice(0, 14).map(k =>
       `<span class="kw ${hitSet.has(k)?"hit":""}">${esc(k)}</span>`).join("");
     const fp = unit.footprint || {};
     return `
-      <div class="unit-row">
-        <div class="unit-row-top">
-          <span class="unit-name">${esc(unit.name)}</span>
-          <span class="badge topical">${hits.length} keyword${hits.length>1?"s":""}</span>
-          <div class="score-bar"><div class="score-fill" style="width:${Math.min(100,score*140)}%"></div></div>
-          <span class="score-num">${score.toFixed(2)}</span>
+      <div class="tunit-row">
+        <div class="tunit-top">
+          <span class="tunit-name">${esc(unit.name)}</span>
+          <span class="badge topical">${hits.length} keyword match${hits.length>1?"es":""}</span>
+          <div class="score-track"><div class="score-fill" style="width:${Math.min(100,score*140)}%"></div></div>
         </div>
-        <div class="muted small" style="margin-top:4px">${fp.grant||0} grants · ${fp.paper||0} papers · ${fp.trial||0} trials · ${fmtUSD(fp.total_usd)} federal funding</div>
-        <div class="kw-match">${kwTags}</div>
+        <div class="tunit-fp">${fp.grant||0} grants · ${fp.paper||0} papers · ${fp.trial||0} trials · ${fmtUSD(fp.total_usd)} federal funding</div>
+        <div class="kw-row">${kws}</div>
       </div>`;
   }).join("");
   return `
-    <div class="panel-head">
-      <div><h2>Topical alignment</h2><div class="sub">UNC units whose grant &amp; publication keywords overlap “${esc(query)}”</div></div>
-      <span class="badge topical">Topical match</span>
-    </div>
-    <div class="panel-body">${rows}</div>`;
+    <div class="topical-card">
+      <div class="tc-header">
+        <div class="tc-title">Topical alignment</div>
+        <div class="tc-sub">UNC units whose research keywords overlap your query</div>
+      </div>
+      <div class="tc-body">${rows}</div>
+    </div>`;
 }
 
-// ---------- explorer grid ----------
-function renderUnitGrid(){
+// ── unit grid ────────────────────────────────────────────────────────────────
+
+function renderUnitGrid() {
   const grid = $("#unit-grid");
   const units = GRAPH.units
     .filter(u => u.id !== "unc:root")
     .sort((a,b) => (b.footprint.total||0) - (a.footprint.total||0));
-  grid.innerHTML = "";
-  for(const u of units){
-    const fp = u.footprint;
-    const has = fp.total > 0;
-    const card = el("button", "unit-card" + (has?"":" empty"));
-    card.innerHTML = `
-      <h3>${esc(u.name)}</h3>
-      <div class="uc-stats">
-        <span><b>${fp.total||0}</b> records</span>
-        <span><b>${(u.top_companies||[]).length}</b> partners</span>
-        <span><b>${fmtUSD(fp.total_usd)}</b> funding</span>
-      </div>
-      <div class="uc-kw">${(u.keywords||[]).slice(0,6).map(esc).join(" · ") || "<span class='muted'>" + (has ? "Linked via trials &amp; awards (no topic profile)" : "No indexed records yet") + "</span>"}</div>`;
-    if(has) card.addEventListener("click", () => openUnit(u));
-    grid.appendChild(card);
-  }
+
+  grid.innerHTML = units.map(u => {
+    const fp = u.footprint || {};
+    const has = (fp.total || 0) > 0;
+    const kwText = (u.keywords||[]).slice(0,5).map(esc).join(" · ") ||
+      (has ? "Linked via trials &amp; awards" : "No indexed records yet");
+    return `
+      <button class="unit-card${has?"":" empty"}" data-uid="${esc(u.id)}">
+        <div class="uc-name">${esc(u.name)}</div>
+        <div class="uc-nums">
+          <div class="uc-num"><b>${fp.total||0}</b><span>records</span></div>
+          <div class="uc-num"><b>${(u.top_companies||[]).length}</b><span>partners</span></div>
+          <div class="uc-num"><b>${fmtUSD(fp.total_usd)}</b><span>funding</span></div>
+        </div>
+        <div class="uc-kw">${kwText}</div>
+      </button>`;
+  }).join("");
+
+  grid.querySelectorAll(".unit-card:not(.empty)").forEach(card =>
+    card.addEventListener("click", () => openUnit(UNIT_BY_ID[card.dataset.uid]))
+  );
 }
 
-// ---------- company chips ----------
-function renderCompanyChips(){
+// ── company chips ─────────────────────────────────────────────────────────────
+
+function renderCompanyChips() {
   const box = $("#company-chips");
   const cos = [...GRAPH.companies].sort((a,b) => b.total_edges - a.total_edges);
-  box.innerHTML = "";
-  if(!cos.length){ box.innerHTML = `<span class="muted small">No company links in this build.</span>`; return; }
-  for(const c of cos){
-    const chip = el("button", "co-chip");
-    chip.innerHTML = `<span class="dot ${c.confidence}"></span>${esc(c.name)} <span class="n">${c.total_edges}</span>`;
-    chip.addEventListener("click", () => { $("#q").value = c.name; runSearch(c.name); window.scrollTo({top:0,behavior:"smooth"}); });
-    box.appendChild(chip);
-  }
+  if (!cos.length) { box.innerHTML = `<span style="color:var(--muted);font-size:.9rem">No company links in this build.</span>`; return; }
+  box.innerHTML = cos.map(c => `
+    <button class="co-chip" data-co="${esc(c.name)}">
+      <span class="co-dot ${c.confidence}"></span>
+      ${esc(c.name)}
+      <span class="co-count">${c.total_edges}</span>
+    </button>`).join("");
+  box.querySelectorAll(".co-chip").forEach(btn =>
+    btn.addEventListener("click", () => {
+      $("#q").value = btn.dataset.co;
+      $("#search-clear").hidden = false;
+      runSearch(btn.dataset.co);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    })
+  );
 }
 
-// ---------- unit modal ----------
-function openUnit(u){
-  const fp = u.footprint;
-  const companies = (u.top_companies||[]).map(c =>
-    `<button class="co-chip" data-co="${esc(c.name)}"><span class="dot ${c.confidence}"></span>${esc(c.name)} <span class="n">${c.count}</span></button>`).join("") || "<span class='muted small'>No industry partners on record.</span>";
+// ── unit modal ────────────────────────────────────────────────────────────────
+
+function openUnit(u) {
+  if (!u) return;
+  const fp = u.footprint || {};
+  const partners = (u.top_companies||[]).map(c =>
+    `<button class="co-chip" data-co="${esc(c.name)}"><span class="co-dot ${c.confidence}"></span>${esc(c.name)} <span class="co-count">${c.count}</span></button>`
+  ).join("") || `<span style="color:var(--muted);font-size:.85rem">No industry partners on record.</span>`;
   const faculty = (u.top_faculty||[]).slice(0,8).map(f =>
-    `<li>${esc(f.name)} <span class="c">· ${f.count} record${f.count>1?"s":""}</span></li>`).join("") || "<li class='muted'>No faculty indexed.</li>";
-  const kw = (u.keywords||[]).slice(0,24).map(k => `<span class="kw">${esc(k)}</span>`).join("") || "<span class='muted small'>No topic profile.</span>";
+    `<li>${esc(f.name)}<span class="fac-count">${f.count} record${f.count>1?"s":""}</span></li>`
+  ).join("") || `<li style="color:var(--muted)">No faculty indexed.</li>`;
+  const kw = (u.keywords||[]).slice(0,24).map(k => `<span class="kw">${esc(k)}</span>`).join("") ||
+    `<span style="color:var(--muted);font-size:.85rem">No topic profile.</span>`;
 
   $("#modal-body").innerHTML = `
-    <h2>${esc(u.name)}</h2>
-    <div class="muted small">${esc(u.short_name||"")} · part of UNC-Chapel Hill</div>
+    <h2 class="modal-unit-name">${esc(u.name)}</h2>
+    <p class="modal-unit-sub">${esc(u.short_name||"")} · UNC–Chapel Hill</p>
     <div class="modal-stats">
-      <div class="ms"><b>${fp.grant||0}</b><span>Grants</span></div>
-      <div class="ms"><b>${fp.paper||0}</b><span>Papers</span></div>
-      <div class="ms"><b>${fp.trial||0}</b><span>Trials</span></div>
-      <div class="ms"><b>${fp.contract||0}</b><span>Contracts</span></div>
-      <div class="ms"><b>${fmtUSD(fp.total_usd)}</b><span>Federal funding</span></div>
+      <div class="mstat"><div class="mstat-val">${fp.grant||0}</div><div class="mstat-lbl">Grants</div></div>
+      <div class="mstat"><div class="mstat-val">${fp.paper||0}</div><div class="mstat-lbl">Papers</div></div>
+      <div class="mstat"><div class="mstat-val">${fp.trial||0}</div><div class="mstat-lbl">Trials</div></div>
+      <div class="mstat"><div class="mstat-val">${fp.contract||0}</div><div class="mstat-lbl">Contracts</div></div>
+      <div class="mstat"><div class="mstat-val">${fmtUSD(fp.total_usd)}</div><div class="mstat-lbl">Federal funding</div></div>
     </div>
     <div class="modal-section">
-      <h4>Industry partners</h4>
-      <div class="tag-list">${companies}</div>
+      <div class="modal-section-title">Industry partners</div>
+      <div class="tag-list">${partners}</div>
     </div>
     <div class="modal-section">
-      <h4>Most active faculty (by indexed records)</h4>
+      <div class="modal-section-title">Most active faculty</div>
       <ul class="fac-list">${faculty}</ul>
     </div>
     <div class="modal-section">
-      <h4>Research keywords</h4>
+      <div class="modal-section-title">Research keywords</div>
       <div class="tag-list">${kw}</div>
     </div>`;
-  $("#modal-body").querySelectorAll("[data-co]").forEach(b =>
-    b.addEventListener("click", () => { closeModal(); $("#q").value = b.dataset.co; runSearch(b.dataset.co); window.scrollTo({top:0,behavior:"smooth"}); }));
+
+  $("#modal-body").querySelectorAll("[data-co]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      closeModal();
+      $("#q").value = btn.dataset.co;
+      $("#search-clear").hidden = false;
+      runSearch(btn.dataset.co);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    })
+  );
   $("#unit-modal").hidden = false;
+  document.body.style.overflow = "hidden";
 }
-function closeModal(){ $("#unit-modal").hidden = true; }
+
+function closeModal() {
+  $("#unit-modal").hidden = true;
+  document.body.style.overflow = "";
+}
 
 $("#modal-close").addEventListener("click", closeModal);
-$("#unit-modal").addEventListener("click", (e) => { if(e.target.id === "unit-modal") closeModal(); });
-document.addEventListener("keydown", (e) => { if(e.key === "Escape") closeModal(); });
+$("#unit-modal").addEventListener("click", e => { if (e.target.id === "unit-modal") closeModal(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+// ── nav scroll effect ─────────────────────────────────────────────────────────
+
+window.addEventListener("scroll", () => {
+  const nav = $("#nav");
+  if (window.scrollY > 10) nav.style.borderBottomColor = "var(--border-mid)";
+  else nav.style.borderBottomColor = "var(--border)";
+}, { passive: true });
 
 load();
