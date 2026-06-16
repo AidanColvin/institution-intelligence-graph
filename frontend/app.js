@@ -107,9 +107,9 @@ function buildNetwork3D() {
     .nodeColor(colorOf)
     .nodeOpacity(0.95)
     .nodeLabel(n => `<div class="net-tip">${esc(n.name)}</div>`)
-    .linkColor(l => l.kind === "org" ? "rgba(63,125,110,0.40)" : "rgba(20,20,22,0.08)")
-    .linkWidth(l => l.kind === "org" ? 0.7 : 0.25)
-    .linkOpacity(0.65)
+    .linkColor(l => l.kind === "org" ? "rgba(63,125,110,0.55)" : "rgba(30,30,33,0.16)")
+    .linkWidth(l => l.kind === "org" ? 1.1 : 0.45)
+    .linkOpacity(0.8)
     .width(el.clientWidth)
     .height(el.clientHeight)
     .onNodeClick(n => {
