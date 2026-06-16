@@ -11,6 +11,8 @@ const EDGE_LABEL = { grant:"Grant", paper:"Paper", trial:"Clinical trial", contr
 let GRAPH = null;
 let UNIT_BY_ID = {};
 let COMPANY_INDEX = [];
+let API_OK = false;       // is the live backend reachable?
+let SEARCH_SEQ = 0;       // guards against out-of-order async results
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -50,6 +52,47 @@ async function load() {
   $("#built-at").textContent = GRAPH.meta.built_at || "—";
   const total = GRAPH.units.filter(u => u.id !== "unc:root").length;
   $("#unit-count").textContent = `${total} units mapped · anchored on ROR ${GRAPH.meta.unc_ror || "0130frc33"}`;
+  checkApiHealth();
+}
+
+// ── backend connectivity ───────────────────────────────────────────────────
+
+async function checkApiHealth() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(`${API_BASE}/health`, { signal: ctrl.signal });
+    clearTimeout(t);
+    API_OK = res.ok;
+  } catch { API_OK = false; }
+  renderApiStatus();
+}
+
+function renderApiStatus() {
+  const el = $("#api-status");
+  if (!el) return;
+  el.className = "api-status " + (API_OK ? "live" : "local");
+  el.title = API_OK
+    ? "Connected to the live research-graph API"
+    : "Live API unreachable — running matcher locally";
+  el.innerHTML = `<span class="api-dot"></span>${API_OK ? "Live API" : "Local mode"}`;
+}
+
+// Query the deployed backend; returns {company, topical_matches} or null on failure.
+async function fetchBackendMatch(query) {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 3500);
+    const res = await fetch(`${API_BASE}/match/${encodeURIComponent(query)}`, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+// Local, in-browser matching — always available as an instant fallback.
+function localMatch(query) {
+  return { company: matchCompany(query), topical: matchTopical(query) };
 }
 
 // ── nav stats ─────────────────────────────────────────────────────────────────
@@ -97,15 +140,37 @@ function wireSearch() {
 function runSearch(query) {
   query = (query || "").trim();
   const results = $("#results");
-  const evPanel  = $("#evidence-panel");
-  const topPanel = $("#topical-panel");
-  const noRes    = $("#no-results");
-
   if (!query) { results.hidden = true; return; }
   results.hidden = false;
 
-  const company = matchCompany(query);
-  const topical = matchTopical(query);
+  const seq = ++SEARCH_SEQ;
+
+  // 1) Render local matches instantly — snappy, always works.
+  const local = localMatch(query);
+  renderResults(query, local.company, local.topical);
+
+  // 2) Refresh from the live backend in the background (authoritative,
+  //    same precomputed graph → identical data, so no visible flicker).
+  if (API_OK) {
+    fetchBackendMatch(query).then(backend => {
+      if (seq !== SEARCH_SEQ || !backend) return;   // superseded or unavailable
+      const company = backend.company || null;
+      const topical = (backend.topical_matches || [])
+        .map(m => ({
+          unit: UNIT_BY_ID[m.unit_id] || { name: m.unit_name, id: m.unit_id, keywords: [], footprint: m.footprint || {} },
+          score: m.score,
+          hits: m.hits || [],
+        }))
+        .filter(x => x.unit);
+      renderResults(query, company, topical);
+    }).catch(() => { /* local result stands */ });
+  }
+}
+
+function renderResults(query, company, topical) {
+  const evPanel  = $("#evidence-panel");
+  const topPanel = $("#topical-panel");
+  const noRes    = $("#no-results");
 
   evPanel.hidden  = !company;
   topPanel.hidden = !topical.length;
