@@ -213,7 +213,7 @@ function renderUnitGrid(){
         <span><b>${(u.top_companies||[]).length}</b> partners</span>
         <span><b>${fmtUSD(fp.total_usd)}</b> funding</span>
       </div>
-      <div class="uc-kw">${(u.keywords||[]).slice(0,6).map(esc).join(" · ") || "<span class='muted'>No indexed records yet</span>"}</div>`;
+      <div class="uc-kw">${(u.keywords||[]).slice(0,6).map(esc).join(" · ") || "<span class='muted'>" + (has ? "Linked via trials &amp; awards (no topic profile)" : "No indexed records yet") + "</span>"}</div>`;
     if(has) card.addEventListener("click", () => openUnit(u));
     grid.appendChild(card);
   }
