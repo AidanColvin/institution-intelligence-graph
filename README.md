@@ -85,5 +85,15 @@ python scripts/serve.py --port 8001
 
 ## Live site
 
-The `frontend/` directory is deployed as a static site to GitHub Pages — it loads
-`graph.json` and runs both matcher modes entirely in the browser. No backend required.
+**Deployed full-stack on Vercel (free, no API keys):** https://institution-intelligence-graph.vercel.app
+
+One Vercel deployment serves both the static frontend and the Python API on the
+same origin (`vercel.json` builds `frontend/**` as static + `api/index.py` as a
+`@vercel/python` function):
+
+- `/` → the static frontend (loads `graph.json`, renders the 3D network + matcher)
+- `/health`, `/stats`, `/match/{company}`, `/unit/{id}/profile` → the API function
+
+The frontend renders local matches instantly, then refreshes from the same-origin
+API (no CORS, no keys). Pushing to `main` auto-deploys via Vercel's GitHub
+integration. GitHub Pages is no longer used.
