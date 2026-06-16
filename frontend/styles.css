@@ -1075,3 +1075,48 @@ input#q::-webkit-search-cancel-button { -webkit-appearance: none; }
 .api-status.local .api-dot { background: var(--faint); }
 
 @media (max-width: 720px) { .api-status { display: none; } }
+
+/* ---------------------------------------------------------------------
+   3D research network
+   --------------------------------------------------------------------- */
+.network-section { padding-bottom: 48px; }
+.network-stage { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
+#graph-3d {
+  width: 100%;
+  height: 560px;
+  border-radius: var(--r-xl);
+  border: 1px solid var(--hairline);
+  background: radial-gradient(120% 130% at 50% 0%, #ffffff 0%, #f4f4f7 70%, #eeeef1 100%);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: grab;
+}
+#graph-3d:active { cursor: grabbing; }
+#graph-3d canvas { display: block; }
+.net-fallback {
+  display: grid; place-items: center; height: 100%;
+  color: var(--muted); font-size: 14px; text-align: center; padding: 24px;
+}
+.net-tip {
+  background: rgba(29, 29, 31, 0.92);
+  color: #fff; font-family: var(--font);
+  font-size: 12.5px; font-weight: 500;
+  padding: 5px 11px; border-radius: 8px; white-space: nowrap;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+}
+.network-legend {
+  display: flex; gap: 22px; flex-wrap: wrap; justify-content: center;
+  margin-top: 20px; font-size: 13px; color: var(--muted);
+}
+.network-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.network-legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.network-legend i.root { background: #1d1d1f; }
+.network-legend i.unit { background: #3f7d6e; }
+.network-legend i.conf { background: #5b8f81; }
+.network-legend i.prob { background: #b08d57; }
+
+@media (max-width: 720px) {
+  .network-stage { padding: 0 18px; }
+  #graph-3d { height: 420px; border-radius: var(--r-lg); }
+  .network-legend { gap: 14px; font-size: 12px; }
+}

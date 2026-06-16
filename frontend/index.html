@@ -64,6 +64,25 @@
     </div>
   </section>
 
+  <!-- 3D research network -->
+  <section class="section network-section">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 class="section-title">Research network</h2>
+        <p class="section-sub">Every dot is a UNC unit or a partner company; every line is a public record connecting them. Drag to rotate, scroll to zoom, click a dot to explore.</p>
+      </div>
+    </div>
+    <div class="network-stage">
+      <div id="graph-3d"></div>
+      <div class="network-legend">
+        <span><i class="root"></i> UNC–Chapel Hill</span>
+        <span><i class="unit"></i> School / unit</span>
+        <span><i class="conf"></i> Company · confirmed</span>
+        <span><i class="prob"></i> Company · probable</span>
+      </div>
+    </div>
+  </section>
+
   <!-- Units grid -->
   <section class="section wrap">
     <div class="section-head">
@@ -122,6 +141,7 @@
     </div>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/3d-force-graph/dist/3d-force-graph.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

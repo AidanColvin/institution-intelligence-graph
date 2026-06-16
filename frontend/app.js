@@ -49,10 +49,110 @@ async function load() {
   renderUnitGrid();
   renderCompanyChips();
   wireSearch();
+  buildNetwork3D();
   $("#built-at").textContent = GRAPH.meta.built_at || "—";
   const total = GRAPH.units.filter(u => u.id !== "unc:root").length;
   $("#unit-count").textContent = `${total} units mapped · anchored on ROR ${GRAPH.meta.unc_ror || "0130frc33"}`;
   checkApiHealth();
+}
+
+// ── 3D research network ───────────────────────────────────────────────────────
+
+let NETGRAPH = null;
+
+function buildNetwork3D() {
+  const el = $("#graph-3d");
+  if (!el) return;
+  if (!window.ForceGraph3D) {                 // CDN didn't load — graceful fallback
+    el.innerHTML = `<div class="net-fallback">3D view unavailable — the visualization library couldn't load.</div>`;
+    return;
+  }
+
+  const ROOT = "unc:root";
+  const nodes = [{ id: ROOT, name: "UNC–Chapel Hill", type: "root", val: 60 }];
+  const valid = new Set([ROOT]);
+
+  const activeUnits = GRAPH.units.filter(u => u.id !== ROOT && (u.footprint?.total || 0) > 0);
+  for (const u of activeUnits) {
+    valid.add(u.id);
+    nodes.push({
+      id: u.id, name: u.name, type: "unit",
+      val: Math.min(34, 8 + Math.sqrt(u.footprint.total || 1)), _unit: u,
+    });
+  }
+
+  const links = activeUnits.map(u => ({ source: ROOT, target: u.id, kind: "org" }));
+
+  for (const c of GRAPH.companies) {
+    const cu = (c.units || []).filter(x => valid.has(x.unit_id));
+    if (!cu.length) continue;
+    nodes.push({
+      id: c.id, name: c.name, type: "company", confidence: c.confidence,
+      val: Math.min(9, 1.6 + Math.sqrt(c.total_edges || 1)), _company: c,
+    });
+    for (const x of cu) links.push({ source: c.id, target: x.unit_id, kind: "evidence" });
+  }
+
+  const colorOf = n =>
+    n.type === "root" ? "#1d1d1f" :
+    n.type === "unit" ? "#3f7d6e" :
+    n.confidence === "confirmed" ? "#5b8f81" : "#b08d57";
+
+  NETGRAPH = ForceGraph3D()(el)
+    .graphData({ nodes, links })
+    .backgroundColor("rgba(0,0,0,0)")        // transparent → DOM gradient shows through
+    .showNavInfo(false)
+    .nodeRelSize(4)
+    .nodeVal("val")
+    .nodeColor(colorOf)
+    .nodeOpacity(0.95)
+    .nodeLabel(n => `<div class="net-tip">${esc(n.name)}</div>`)
+    .linkColor(l => l.kind === "org" ? "rgba(63,125,110,0.40)" : "rgba(20,20,22,0.08)")
+    .linkWidth(l => l.kind === "org" ? 0.7 : 0.25)
+    .linkOpacity(0.65)
+    .width(el.clientWidth)
+    .height(el.clientHeight)
+    .onNodeClick(n => {
+      if (n.type === "unit" && n._unit) {
+        openUnit(n._unit);
+      } else if (n.type === "company" && n._company) {
+        $("#q").value = n._company.name;
+        $("#search-clear").hidden = false;
+        runSearch(n._company.name);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else if (n.type === "root") {
+        NETGRAPH.cameraPosition({ x: 0, y: 0, z: 360 }, { x: 0, y: 0, z: 0 }, 900);
+      }
+    });
+
+  NETGRAPH.cameraPosition({ z: 360 });
+
+  // Gentle auto-orbit that yields to the user and resumes after inactivity.
+  let paused = false, resumeT, angle = 0, radius = 360;
+  const syncAngle = () => {
+    const p = NETGRAPH.camera().position;
+    radius = Math.hypot(p.x, p.z) || 360;
+    angle = Math.atan2(p.x, p.z);
+  };
+  const hold = () => { paused = true; clearTimeout(resumeT); };
+  const release = () => { clearTimeout(resumeT); resumeT = setTimeout(() => { syncAngle(); paused = false; }, 2500); };
+  el.addEventListener("pointerdown", hold);
+  el.addEventListener("pointerup", release);
+  el.addEventListener("wheel", () => { hold(); release(); }, { passive: true });
+
+  setInterval(() => {
+    if (paused || !NETGRAPH) return;
+    angle += 0.0022;
+    const y = NETGRAPH.camera().position.y;
+    NETGRAPH.cameraPosition({ x: radius * Math.sin(angle), y, z: radius * Math.cos(angle) }, undefined, 0);
+  }, 33);
+
+  // Keep the canvas sized to its container.
+  let rt;
+  window.addEventListener("resize", () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => { if (NETGRAPH) NETGRAPH.width(el.clientWidth).height(el.clientHeight); }, 200);
+  }, { passive: true });
 }
 
 // ── backend connectivity ───────────────────────────────────────────────────
