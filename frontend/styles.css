@@ -571,12 +571,43 @@ input#q::-webkit-search-cancel-button { -webkit-appearance: none; }
   padding: 10px 30px 14px;
 }
 
+/* Coverage / freshness strip — honest "what's behind this & how fresh" */
+.rc-coverage {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 30px;
+  padding: 9px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--accent-strong);
+  font-weight: 500;
+}
+.rc-coverage svg { flex: none; }
+
 /* ---- Unit evidence row inside a result card ---- */
 .unit-ev {
   padding: 18px 0;
   border-bottom: 1px solid var(--hairline-2);
 }
 .unit-ev:last-child { border-bottom: 0; }
+.unit-ev.is-clickable {
+  cursor: pointer;
+  margin: 0 -14px;
+  padding: 18px 14px;
+  border-radius: var(--r-md);
+  transition: background 0.15s var(--ease);
+}
+.unit-ev.is-clickable:hover { background: var(--surface); }
+.unit-ev.is-clickable:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.ev-more {
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent-strong);
+}
 
 .unit-ev-top {
   display: flex;
