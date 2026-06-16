@@ -122,14 +122,36 @@ def _run_source(phase: str, extractor, raw_table: str, builder, limit: int | Non
     logger.info("%s complete: %d records, %d edges", phase, count, edge_count)
 
 
+def _load_ror_anchor() -> None:
+    """
+    Fetch UNC-CH's ROR record (anchor 0130frc33) and store it raw.
+    The org tree itself is curated, but this verifies the anchor against the
+    live ROR registry and records it (with source_url + fetched_at) like every
+    other source. Best-effort: a ROR outage must not block the rest of the build.
+    """
+    from backend.graph import store
+    from backend.extractors.ror import RORExtractor
+    from backend.extractors.base import now_iso
+    try:
+        ror = RORExtractor()
+        n = 0
+        for rid, source_url, raw in ror.extract():
+            store.upsert_raw("raw_ror_orgs", rid, source_url, now_iso(), raw)
+            n += 1
+        logger.info("ROR anchor: stored %d org record(s)", n)
+    except Exception as exc:
+        logger.warning("ROR anchor fetch failed (non-fatal): %s", exc)
+
+
 def phase1_nih(limit: int | None = None) -> None:
-    """Extract NIH grants and build graph edges."""
+    """Extract the ROR anchor + NIH grants and build graph edges."""
     from backend.graph import store
     from backend.extractors.nih import NIHExtractor
     from backend.transform.graph_builder import load_unc_org_tree, build_from_nih
 
     store.init_schema()
     load_unc_org_tree()
+    _load_ror_anchor()
     _run_source("Phase 1 (NIH)", NIHExtractor(), "raw_nih_grants", build_from_nih, limit)
 
 

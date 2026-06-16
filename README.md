@@ -31,7 +31,12 @@ millisecond lookup against the precomputed graph.
 | Static browser frontend | `frontend/` |
 
 ### Data sources (all keyless, public)
-NIH RePORTER · NSF Awards · USAspending · ClinicalTrials.gov · Crossref · SEC EDGAR (company_tickers) · ROR · ORCID · OpenAlex snapshot (optional).
+NIH RePORTER · NSF Awards · USAspending · ClinicalTrials.gov · Crossref · SEC EDGAR (company_tickers) · ROR (anchor `0130frc33`) · ORCID · OpenAlex snapshot (optional).
+
+**Patents** are a defined edge type in the schema but are intentionally **not populated**:
+the only patent APIs (USPTO PatentsView Search, EPO OPS) now require an API key, which
+violates the hard "no API keys" constraint. The edge type is reserved for a future
+keyless source (e.g. a bulk snapshot).
 
 ## Build the graph
 

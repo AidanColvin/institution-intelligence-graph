@@ -1,6 +1,14 @@
 """
 Transform raw records into typed graph nodes and edges.
 One function per source type.  Each function calls store upserts directly.
+
+Edge types: grant | paper | trial | contract | patent.
+NOTE on 'patent': the spec lists patents as an edge type, and the schema/matcher
+weights reserve it, but no patent edges are produced. The only patent data sources
+(USPTO PatentsView Search API, EPO OPS) now require an API key, which violates the
+hard "no API keys" constraint. Patents are therefore intentionally omitted until a
+genuinely keyless source exists; the edge type remains defined for forward
+compatibility (e.g. an OpenAlex/Lens snapshot import).
 """
 from __future__ import annotations
 import hashlib
