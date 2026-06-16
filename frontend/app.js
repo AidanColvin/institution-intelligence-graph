@@ -150,16 +150,19 @@ function buildNetwork3D() {
   el.addEventListener("pointerup", release);
   el.addEventListener("wheel", () => { hold(); release(); }, { passive: true });
 
-  // Frame the whole graph once it settles, then begin orbiting.
+  // Frame the whole graph once the layout has actually settled, then orbit.
+  // (Ignore early engine-stops fired while the cluster is still a tight ball.)
   let fitted = false;
+  const t0 = performance.now();
   const fitAndSpin = () => {
     if (fitted || !NETGRAPH) return;
+    if (performance.now() - t0 < 2600) return;   // too early — layout still expanding
     fitted = true;
-    NETGRAPH.zoomToFit(800, 70);
-    setTimeout(() => { syncAngle(); paused = false; }, 900);
+    NETGRAPH.zoomToFit(900, 80);
+    setTimeout(() => { syncAngle(); paused = false; }, 1000);
   };
   NETGRAPH.onEngineStop(fitAndSpin);
-  setTimeout(fitAndSpin, 5000);   // fallback if the engine never fully stops
+  setTimeout(fitAndSpin, 4200);    // fallback once settling is reliably done
 
   setInterval(() => {
     if (paused || !NETGRAPH) return;
