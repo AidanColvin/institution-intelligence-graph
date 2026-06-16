@@ -1,0 +1,17 @@
+# Build artifacts
+*.db
+*.db.wal
+.checkpoints/
+test_build*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Logs
+*.log

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UNC Research Footprint Graph</title>
+  <meta name="description" content="A precomputed map of UNC-Chapel Hill's public research footprint — companies, sectors, schools, and faculty linked by concrete public records." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="masthead">
+    <div class="wrap">
+      <div class="brand">
+        <div class="brand-mark">UNC</div>
+        <div>
+          <h1>Research Footprint Graph</h1>
+          <p class="tagline">A precomputed map of UNC&#8209;Chapel Hill's public research footprint — for mapping &amp; report enrichment.</p>
+        </div>
+      </div>
+      <div id="statchips" class="statchips"><!-- filled by JS --></div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="search-section">
+      <label for="q" class="search-label">Search a company, sector, or research topic</label>
+      <div class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 10-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1114 9.5 4.5 4.5 0 019.5 14z"/></svg>
+        <input id="q" type="search" autocomplete="off" placeholder="e.g. Pfizer, oncology, gene therapy, biostatistics…" />
+      </div>
+      <div class="search-hints">
+        Try a partner company (<button class="hint" data-q="Merck">Merck</button>,
+        <button class="hint" data-q="Novo Nordisk">Novo Nordisk</button>,
+        <button class="hint" data-q="GlaxoSmithKline">GSK</button>)
+        or a topic (<button class="hint" data-q="cancer immunotherapy">cancer immunotherapy</button>,
+        <button class="hint" data-q="HIV vaccine">HIV vaccine</button>,
+        <button class="hint" data-q="gene therapy">gene therapy</button>).
+      </div>
+    </section>
+
+    <section id="results" class="results" hidden>
+      <div id="evidence-panel" class="panel" hidden></div>
+      <div id="topical-panel" class="panel" hidden></div>
+    </section>
+
+    <section class="explorer">
+      <div class="explorer-head">
+        <h2>Explore UNC Units</h2>
+        <span class="muted" id="unit-count"></span>
+      </div>
+      <div id="unit-grid" class="unit-grid"><!-- filled by JS --></div>
+    </section>
+
+    <section class="directory">
+      <h2>Partner Companies <span class="muted">(public records)</span></h2>
+      <p class="muted small">Companies linked to UNC by a concrete public record — a clinical trial sponsorship, co-authored paper, or award. Click to see the evidence.</p>
+      <div id="company-chips" class="company-chips"><!-- filled by JS --></div>
+    </section>
+  </main>
+
+  <!-- Unit detail modal -->
+  <div id="unit-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+      <div id="modal-body"><!-- filled by JS --></div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div>
+          <strong>How this works</strong>
+          <p>Every edge in this graph is a concrete public record — a grant, paper, clinical trial, or federal award — each carrying its own source URL and date. Matching is done on structured fields, never free text.</p>
+        </div>
+        <div>
+          <strong>Confidence tiers</strong>
+          <p><span class="badge confirmed">confirmed</span> a structured identifier matched (SEC CIK, ORCID, NSF UEI, trial sponsor). <span class="badge probable">probable</span> a normalized-name match only.</p>
+        </div>
+        <div>
+          <strong>Data sources</strong>
+          <p id="footer-sources">NIH RePORTER · NSF Awards · USAspending · ClinicalTrials.gov · Crossref · SEC EDGAR · ROR. 100% free, public, keyless.</p>
+        </div>
+      </div>
+      <p class="footer-note">
+        Anchor: UNC&#8209;Chapel Hill · ROR <a href="https://ror.org/0130frc33" target="_blank" rel="noopener">0130frc33</a>.
+        Built for research-intelligence mapping and report enrichment — not outreach.
+        Graph last built: <span id="built-at">—</span>.
+      </p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
