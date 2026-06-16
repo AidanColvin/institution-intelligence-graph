@@ -107,9 +107,13 @@ function buildNetwork3D() {
     .nodeColor(colorOf)
     .nodeOpacity(0.95)
     .nodeLabel(n => `<div class="net-tip">${esc(n.name)}</div>`)
-    .linkColor(l => l.kind === "org" ? "rgba(63,125,110,0.55)" : "rgba(30,30,33,0.16)")
-    .linkWidth(l => l.kind === "org" ? 1.1 : 0.45)
-    .linkOpacity(0.8)
+    .linkColor(l => l.kind === "org" ? "rgba(63,125,110,0.80)" : "rgba(63,125,110,0.34)")
+    .linkWidth(l => l.kind === "org" ? 1.4 : 0.7)
+    .linkOpacity(0.7)
+    .linkDirectionalParticles(l => l.kind === "org" ? 4 : 2)
+    .linkDirectionalParticleWidth(l => l.kind === "org" ? 2.6 : 1.7)
+    .linkDirectionalParticleSpeed(l => l.kind === "org" ? 0.006 : 0.011)
+    .linkDirectionalParticleColor(l => l.kind === "org" ? "#1d4d40" : "#3f7d6e")
     .width(el.clientWidth)
     .height(el.clientHeight)
     .onNodeClick(n => {
@@ -125,13 +129,19 @@ function buildNetwork3D() {
       }
     });
 
-  NETGRAPH.cameraPosition({ z: 360 });
+  // Spread the layout out so every connection is legible (not crushed into a ball).
+  try {
+    NETGRAPH.d3Force("charge").strength(-85);
+    NETGRAPH.d3Force("link").distance(l => l.kind === "org" ? 50 : 34);
+  } catch {}
 
-  // Gentle auto-orbit that yields to the user and resumes after inactivity.
-  let paused = false, resumeT, angle = 0, radius = 360;
+  NETGRAPH.cameraPosition({ z: 440 });
+
+  // Auto-orbit that yields to the user and resumes after inactivity.
+  let paused = true, resumeT, angle = 0, radius = 440;   // start paused until layout settles & frames
   const syncAngle = () => {
     const p = NETGRAPH.camera().position;
-    radius = Math.hypot(p.x, p.z) || 360;
+    radius = Math.hypot(p.x, p.z) || radius;
     angle = Math.atan2(p.x, p.z);
   };
   const hold = () => { paused = true; clearTimeout(resumeT); };
@@ -140,9 +150,20 @@ function buildNetwork3D() {
   el.addEventListener("pointerup", release);
   el.addEventListener("wheel", () => { hold(); release(); }, { passive: true });
 
+  // Frame the whole graph once it settles, then begin orbiting.
+  let fitted = false;
+  const fitAndSpin = () => {
+    if (fitted || !NETGRAPH) return;
+    fitted = true;
+    NETGRAPH.zoomToFit(800, 70);
+    setTimeout(() => { syncAngle(); paused = false; }, 900);
+  };
+  NETGRAPH.onEngineStop(fitAndSpin);
+  setTimeout(fitAndSpin, 5000);   // fallback if the engine never fully stops
+
   setInterval(() => {
     if (paused || !NETGRAPH) return;
-    angle += 0.0022;
+    angle += 0.004;                // a touch livelier
     const y = NETGRAPH.camera().position.y;
     NETGRAPH.cameraPosition({ x: radius * Math.sin(angle), y, z: radius * Math.cos(angle) }, undefined, 0);
   }, 33);
