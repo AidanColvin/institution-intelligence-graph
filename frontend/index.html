@@ -28,24 +28,63 @@
   <header class="hero">
     <div class="wrap hero-inner">
       <div class="hero-eyebrow">UNC–Chapel Hill · Public Research Footprint</div>
-      <h1 class="hero-h1">Find UNC's research<br/>connections</h1>
-      <p class="hero-sub">Search any company or topic. See which UNC schools, labs, and faculty are connected — backed by public grants, papers, trials, and contracts.</p>
+      <h1 class="hero-h1">See how the world<br/>connects to UNC research</h1>
+      <p class="hero-sub">Type a <b>company</b> or a <b>research topic</b> — get the UNC schools, labs, and faculty behind it, each link backed by a real public record you can open.</p>
 
       <div class="search-wrap">
         <div class="search-box" id="search-box">
           <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Company name or research topic…" />
+          <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Try a company like “Pfizer” or a topic like “gene therapy”…" />
           <button class="search-clear" id="search-clear" aria-label="Clear" hidden>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-        <div class="search-hints">
-          <span class="hint-label">Try:</span>
-          <button class="pill" data-q="Pfizer">Pfizer</button>
-          <button class="pill" data-q="Novo Nordisk">Novo Nordisk</button>
-          <button class="pill" data-q="cancer immunotherapy">cancer immunotherapy</button>
-          <button class="pill" data-q="HIV vaccine">HIV vaccine</button>
-          <button class="pill" data-q="gene therapy">gene therapy</button>
+
+        <!-- Two-mode legend: teaches the two searches at a glance -->
+        <div class="mode-legend" aria-hidden="true">
+          <span class="mode-legend-item"><span class="mode-glyph evidence"></span>Search a <b>company</b> → see its UNC footprint</span>
+          <span class="mode-legend-dot">·</span>
+          <span class="mode-legend-item"><span class="mode-glyph topical"></span>Search a <b>topic</b> → find the matching UNC units</span>
+        </div>
+      </div>
+
+      <!-- Example-led onboarding: real searches, learn by doing -->
+      <div class="starters" aria-label="Example searches">
+        <p class="starters-lead">New here? Tap an example to see a live result —</p>
+        <div class="starter-grid">
+          <button class="starter-card pill" data-q="Pfizer">
+            <span class="starter-tag evidence">Company</span>
+            <span class="starter-title">See Pfizer’s UNC footprint</span>
+            <span class="starter-desc">Which schools &amp; labs link to Pfizer — by grants, papers &amp; trials.</span>
+            <span class="starter-go">Run this search<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
+          </button>
+
+          <button class="starter-card pill" data-q="gene therapy">
+            <span class="starter-tag topical">Topic</span>
+            <span class="starter-title">Find labs for gene therapy</span>
+            <span class="starter-desc">UNC units whose grant &amp; paper keywords match this field.</span>
+            <span class="starter-go">Run this search<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
+          </button>
+
+          <button class="starter-card pill" data-q="Gilead Sciences">
+            <span class="starter-tag evidence">Company</span>
+            <span class="starter-title">Trace Gilead Sciences</span>
+            <span class="starter-desc">Confirmed links via trial sponsors &amp; SEC-matched records.</span>
+            <span class="starter-go">Run this search<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
+          </button>
+
+          <button class="starter-card pill" data-q="cancer immunotherapy">
+            <span class="starter-tag topical">Topic</span>
+            <span class="starter-title">Map cancer immunotherapy</span>
+            <span class="starter-desc">See which UNC units are most active in this research area.</span>
+            <span class="starter-go">Run this search<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
+          </button>
+        </div>
+
+        <!-- Trust strip: every answer is a real public record -->
+        <div class="trust-strip">
+          <svg class="trust-shield" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.3-3 7.6-7 9-4-1.4-7-4.7-7-9V6l7-3z"/><polyline points="9 12 11.2 14.2 15.5 9.8"/></svg>
+          <span>Every link is a real public record — <b>NIH</b>, <b>NSF</b>, <b>USAspending</b>, <b>ClinicalTrials.gov</b>, <b>Crossref</b> &amp; <b>SEC</b> — with a source link, a date, and a <span class="trust-tier confirmed">confirmed</span>/<span class="trust-tier probable">probable</span> tier. 100% free &amp; public.</span>
         </div>
       </div>
     </div>
@@ -59,8 +98,8 @@
       <div class="no-results-icon">
         <svg viewBox="0 0 48 48" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="22" cy="22" r="16"/><line x1="34" y1="34" x2="44" y2="44"/><line x1="17" y1="22" x2="27" y2="22" stroke-linecap="round"/></svg>
       </div>
-      <h3>No results found</h3>
-      <p id="no-results-msg">Try a known partner company or a research keyword like "oncology" or "biostatistics".</p>
+      <h3>Let’s try a different angle</h3>
+      <p id="no-results-msg">No match yet. Search a <b>company</b> (like “Pfizer” or “Gilead”) to see its UNC footprint, or a <b>research topic</b> (like “gene therapy” or “HIV”) to find the units working on it.</p>
     </div>
   </section>
 
