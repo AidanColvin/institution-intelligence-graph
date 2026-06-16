@@ -2,7 +2,10 @@
    Loads graph.json from the same origin; runs matching entirely in the browser.
    API_BASE can optionally point to the Vercel backend for /match calls. */
 
-const API_BASE = "https://institution-intelligence-graph.vercel.app";
+// Same-origin: the frontend and the Python API are served from one Vercel
+// deployment, so API calls are relative ("/health", "/match/…"). No CORS,
+// no hardcoded host — works wherever it's deployed.
+const API_BASE = "";
 const GRAPH_URL = "graph.json";
 
 const STOPWORDS = new Set("the a an and or of in to for with on at by from is are was inc llc corp co ltd company group holdings international plc study research".split(" "));
