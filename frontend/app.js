@@ -23,6 +23,20 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])));
 const fmtUSD = (n) => { if (!n) return "—"; if (n>=1e9) return "$"+(n/1e9).toFixed(1)+"B"; if (n>=1e6) return "$"+(n/1e6).toFixed(1)+"M"; if (n>=1e3) return "$"+(n/1e3).toFixed(0)+"K"; return "$"+n; };
 
+// Honest coverage/freshness helpers — every label traces to real graph data.
+const SOURCE_LABEL = { grant:"NIH/NSF grants", trial:"ClinicalTrials.gov", paper:"Crossref papers", contract:"federal contracts", patent:"patents" };
+function freshnessLabel() {
+  const d = GRAPH && GRAPH.meta && GRAPH.meta.built_at;
+  if (!d) return "";
+  try { return new Date(d).toLocaleDateString(undefined, { year:"numeric", month:"short", day:"numeric" }); }
+  catch { return d; }
+}
+function sourceTypesOf(co) {
+  const set = new Set();
+  (co.units || []).forEach(u => Object.keys(u.counts || {}).forEach(t => set.add(t)));
+  return [...set];
+}
+
 function normName(s) {
   return (s||"").toLowerCase()
     .replace(/\b(inc|llc|corp|co|ltd|plc|lp|incorporated|corporation|limited|company)\b\.?/g," ")
@@ -304,11 +318,28 @@ function renderResults(query, company, topical) {
   topPanel.hidden = !topical.length;
   noRes.hidden    = !!(company || topical.length);
 
-  if (company) evPanel.innerHTML = renderEvidence(company);
+  if (company) {
+    evPanel.innerHTML = renderEvidence(company);
+    // Each unit row opens its full profile (faculty / partners / keywords).
+    evPanel.querySelectorAll(".unit-ev.is-clickable").forEach(row => {
+      const open = () => { const u = UNIT_BY_ID[row.dataset.unitId]; if (u) openUnit(u); };
+      row.addEventListener("click", e => { if (e.target.closest("a")) return; open(); });
+      row.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    });
+  }
   if (topical.length) topPanel.innerHTML = renderTopical(query, topical);
 
   if (!company && !topical.length) {
-    $("#no-results-msg").textContent = `No partnership records or topical matches for "${query}". Try a topic like "oncology" or a known partner like "Pfizer".`;
+    // Honest, differentiated states — "bad input" vs "genuinely no match".
+    const titleEl = noRes.querySelector("h3");
+    const msgEl = $("#no-results-msg");
+    if (query.replace(/[^a-z0-9]/gi, "").length < 3) {
+      if (titleEl) titleEl.textContent = "Keep typing…";
+      msgEl.innerHTML = `Type a few more letters — a company like <b>Pfizer</b> or a topic like <b>oncology</b>.`;
+    } else {
+      if (titleEl) titleEl.textContent = "No public records for that — yet";
+      msgEl.innerHTML = `We found no public record linking <b>&ldquo;${esc(query)}&rdquo;</b> to UNC, and no UNC unit keywords match it. That means none were found in the public sources — not that none exist. Try a known partner (<b>Merck</b>, <b>Gilead</b>) or a broader topic (<b>genomics</b>, <b>HIV</b>).`;
+    }
   }
 }
 
@@ -344,8 +375,17 @@ function matchTopical(query) {
 function renderEvidence(co) {
   const cikHtml = co.cik
     ? `<a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${esc(co.cik)}&type=10-K" target="_blank" rel="noopener">SEC CIK ${esc(co.cik)} ↗</a>`
-    : "not in SEC filer registry";
+    : "not in the SEC filer registry";
   const rows = (co.units || []).map(u => renderUnitEvRow(u)).join("");
+  const types = sourceTypesOf(co);
+  const sourceText = types.length
+    ? "Sourced from " + types.map(t => SOURCE_LABEL[t] || t).join(", ")
+    : "";
+  const fresh = freshnessLabel();
+  const coverage = [sourceText, fresh ? `as of ${fresh}` : ""].filter(Boolean).join(" · ");
+  const tierNote = co.confidence === "confirmed"
+    ? "structured identifier matched (SEC CIK / trial sponsor)"
+    : "normalized-name match only";
   return `
     <div class="result-card">
       <div class="rc-header">
@@ -355,8 +395,9 @@ function renderEvidence(co) {
             ${co.total_edges} public record${co.total_edges===1?"":"s"} across ${(co.units||[]).length} UNC unit${(co.units||[]).length===1?"":"s"} · ${cikHtml}
           </div>
         </div>
-        <span class="badge ${co.confidence}">${co.confidence}</span>
+        <span class="badge ${co.confidence}" title="${esc(tierNote)}">${co.confidence}</span>
       </div>
+      ${coverage ? `<div class="rc-coverage"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.3-3 7.6-7 9-4-1.4-7-4.7-7-9V6l7-3z"/><polyline points="9 12 11.2 14.2 15.5 9.8"/></svg>${esc(coverage)}</div>` : ""}
       <div class="rc-body">${rows}</div>
     </div>`;
 }
@@ -372,8 +413,11 @@ function renderUnitEvRow(u) {
       <a class="ev-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a>
       ${s.date ? `<span class="ev-date">· ${esc(s.date)}</span>` : ""}
     </li>`).join("");
+  // Non-root units have a full profile (faculty/partners/keywords) — make the row open it.
+  const clickable = u.unit_id && u.unit_id !== "unc:root" && !!UNIT_BY_ID[u.unit_id];
+  const attrs = clickable ? ` data-unit-id="${esc(u.unit_id)}" role="button" tabindex="0"` : "";
   return `
-    <div class="unit-ev">
+    <div class="unit-ev${clickable ? " is-clickable" : ""}"${attrs}>
       <div class="unit-ev-top">
         <span class="unit-ev-name">${esc(unit.name)}</span>
         <div class="score-track"><div class="score-fill" style="width:${pct}%"></div></div>
@@ -382,6 +426,7 @@ function renderUnitEvRow(u) {
       </div>
       <div class="ev-counts">${counts}</div>
       <ul class="ev-samples">${samples}</ul>
+      ${clickable ? `<div class="ev-more">View faculty &amp; details →</div>` : ""}
     </div>`;
 }
 
