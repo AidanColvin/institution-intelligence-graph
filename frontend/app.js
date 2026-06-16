@@ -259,7 +259,8 @@ function wireSearch() {
       input.value = b.dataset.q;
       clearBtn.hidden = false;
       runSearch(b.dataset.q);
-      input.focus();
+      // Examples/starter cards sit high in the hero — bring the answer into view.
+      requestAnimationFrame(() => $("#results").scrollIntoView({ behavior: "smooth", block: "start" }));
     })
   );
 }
