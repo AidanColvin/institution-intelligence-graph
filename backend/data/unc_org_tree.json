@@ -1,0 +1,328 @@
+{
+  "unc:root": {
+    "id": "unc:root",
+    "canonical_name": "University of North Carolina at Chapel Hill",
+    "short_name": "UNC-CH",
+    "ror_id": "0130frc33",
+    "parent_id": null,
+    "aliases": [
+      "University of North Carolina at Chapel Hill",
+      "UNIV OF NORTH CAROLINA CHAPEL HILL",
+      "UNIVERSITY OF NORTH CAROLINA AT CHAPEL HILL",
+      "UNC-Chapel Hill",
+      "UNC Chapel Hill",
+      "UNC-CH",
+      "UNCCH",
+      "The University of North Carolina at Chapel Hill",
+      "UNC"
+    ]
+  },
+
+  "unc:gillings": {
+    "id": "unc:gillings",
+    "canonical_name": "Gillings School of Global Public Health",
+    "short_name": "Gillings SPHG",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "Gillings School of Global Public Health",
+      "GILLINGS SCHOOL OF GLOBAL PUBLIC HEALTH",
+      "SCHOOLS OF PUBLIC HEALTH",
+      "School of Public Health",
+      "SCHOOL OF PUBLIC HEALTH",
+      "SPHG",
+      "SPH",
+      "Dept of Epidemiology",
+      "EPIDEMIOLOGY",
+      "Dept of Biostatistics",
+      "BIOSTATISTICS",
+      "Dept of Health Behavior",
+      "HEALTH BEHAVIOR",
+      "Dept of Nutrition",
+      "NUTRITION",
+      "Dept of Environmental Sciences and Engineering",
+      "ENVIRONMENTAL SCIENCES AND ENGINEERING",
+      "Dept of Health Policy and Management",
+      "HEALTH POLICY AND MANAGEMENT",
+      "Dept of Maternal and Child Health",
+      "MATERNAL AND CHILD HEALTH"
+    ]
+  },
+
+  "unc:som": {
+    "id": "unc:som",
+    "canonical_name": "UNC School of Medicine",
+    "short_name": "SOM",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC School of Medicine",
+      "School of Medicine",
+      "SCHOOL OF MEDICINE",
+      "SCHOOLS OF MEDICINE",
+      "UNC SOM",
+      "Dept of Medicine",
+      "MEDICINE",
+      "Dept of Biochemistry and Biophysics",
+      "BIOCHEMISTRY AND BIOPHYSICS",
+      "Dept of Cell Biology and Physiology",
+      "CELL BIOLOGY AND PHYSIOLOGY",
+      "Dept of Genetics",
+      "GENETICS",
+      "Dept of Microbiology and Immunology",
+      "MICROBIOLOGY AND IMMUNOLOGY",
+      "Dept of Neurology",
+      "NEUROLOGY",
+      "Dept of Neuroscience",
+      "NEUROSCIENCE",
+      "Dept of Pathology and Laboratory Medicine",
+      "PATHOLOGY AND LABORATORY MEDICINE",
+      "Dept of Pharmacology",
+      "PHARMACOLOGY",
+      "Dept of Psychiatry",
+      "PSYCHIATRY",
+      "Dept of Radiology",
+      "RADIOLOGY",
+      "Dept of Surgery",
+      "SURGERY",
+      "Dept of Obstetrics and Gynecology",
+      "OBSTETRICS AND GYNECOLOGY",
+      "Dept of Pediatrics",
+      "PEDIATRICS",
+      "Dept of Internal Medicine",
+      "INTERNAL MEDICINE",
+      "Dept of Anesthesiology",
+      "ANESTHESIOLOGY",
+      "Dept of Emergency Medicine",
+      "EMERGENCY MEDICINE",
+      "Dept of Dermatology",
+      "DERMATOLOGY",
+      "Dept of Ophthalmology",
+      "OPHTHALMOLOGY"
+    ]
+  },
+
+  "unc:lineberger": {
+    "id": "unc:lineberger",
+    "canonical_name": "UNC Lineberger Comprehensive Cancer Center",
+    "short_name": "Lineberger",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC Lineberger Comprehensive Cancer Center",
+      "Lineberger Comprehensive Cancer Center",
+      "LINEBERGER COMPREHENSIVE CANCER CENTER",
+      "UNC Lineberger",
+      "Lineberger Cancer Center",
+      "LCCC",
+      "UNC Cancer Center",
+      "Lineberger"
+    ]
+  },
+
+  "unc:eshelman": {
+    "id": "unc:eshelman",
+    "canonical_name": "UNC Eshelman School of Pharmacy",
+    "short_name": "Eshelman SOP",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC Eshelman School of Pharmacy",
+      "Eshelman School of Pharmacy",
+      "SCHOOLS OF PHARMACY",
+      "ESHELMAN SCHOOL OF PHARMACY",
+      "School of Pharmacy",
+      "SCHOOL OF PHARMACY",
+      "UNC Pharmacy",
+      "Div of Pharmacoengineering and Molecular Pharmaceutics",
+      "PHARMACOENGINEERING AND MOLECULAR PHARMACEUTICS",
+      "Div of Chemical Biology and Medicinal Chemistry",
+      "CHEMICAL BIOLOGY AND MEDICINAL CHEMISTRY",
+      "Div of Molecular Pharmaceutics",
+      "MOLECULAR PHARMACEUTICS",
+      "Div of Pharmacotherapy and Experimental Therapeutics",
+      "PHARMACOTHERAPY AND EXPERIMENTAL THERAPEUTICS"
+    ]
+  },
+
+  "unc:kenan_flagler": {
+    "id": "unc:kenan_flagler",
+    "canonical_name": "Kenan-Flagler Business School",
+    "short_name": "KFBS",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "Kenan-Flagler Business School",
+      "KENAN-FLAGLER BUSINESS SCHOOL",
+      "Kenan Flagler Business School",
+      "KFBS",
+      "UNC Business School",
+      "School of Business"
+    ]
+  },
+
+  "unc:law": {
+    "id": "unc:law",
+    "canonical_name": "UNC School of Law",
+    "short_name": "UNC Law",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC School of Law",
+      "School of Law",
+      "SCHOOL OF LAW",
+      "UNC Law"
+    ]
+  },
+
+  "unc:dentistry": {
+    "id": "unc:dentistry",
+    "canonical_name": "UNC Adams School of Dentistry",
+    "short_name": "Adams Dentistry",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC Adams School of Dentistry",
+      "Adams School of Dentistry",
+      "SCHOOLS OF DENTISTRY",
+      "ADAMS SCHOOL OF DENTISTRY",
+      "School of Dentistry",
+      "SCHOOL OF DENTISTRY",
+      "UNC Dentistry"
+    ]
+  },
+
+  "unc:nursing": {
+    "id": "unc:nursing",
+    "canonical_name": "UNC School of Nursing",
+    "short_name": "UNC Nursing",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC School of Nursing",
+      "School of Nursing",
+      "SCHOOLS OF NURSING",
+      "SCHOOL OF NURSING",
+      "UNC Nursing"
+    ]
+  },
+
+  "unc:social_work": {
+    "id": "unc:social_work",
+    "canonical_name": "UNC School of Social Work",
+    "short_name": "UNC SSW",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC School of Social Work",
+      "School of Social Work",
+      "SCHOOL OF SOCIAL WORK",
+      "UNC SSW"
+    ]
+  },
+
+  "unc:education": {
+    "id": "unc:education",
+    "canonical_name": "UNC School of Education",
+    "short_name": "UNC SOE",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC School of Education",
+      "School of Education",
+      "SCHOOL OF EDUCATION",
+      "Dept of Education",
+      "EDUCATION"
+    ]
+  },
+
+  "unc:information": {
+    "id": "unc:information",
+    "canonical_name": "UNC School of Information and Library Science",
+    "short_name": "SILS",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC School of Information and Library Science",
+      "School of Information and Library Science",
+      "SCHOOL OF INFORMATION AND LIBRARY SCIENCE",
+      "SILS",
+      "Information and Library Science"
+    ]
+  },
+
+  "unc:government": {
+    "id": "unc:government",
+    "canonical_name": "UNC School of Government",
+    "short_name": "UNC SOG",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC School of Government",
+      "School of Government",
+      "SCHOOL OF GOVERNMENT",
+      "SOG"
+    ]
+  },
+
+  "unc:arts_sciences": {
+    "id": "unc:arts_sciences",
+    "canonical_name": "UNC College of Arts and Sciences",
+    "short_name": "CAS",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "UNC College of Arts and Sciences",
+      "College of Arts and Sciences",
+      "COLLEGE OF ARTS AND SCIENCES",
+      "Dept of Biology",
+      "BIOLOGY",
+      "Dept of Chemistry",
+      "CHEMISTRY",
+      "Dept of Computer Science",
+      "COMPUTER SCIENCE",
+      "Dept of Mathematics",
+      "MATHEMATICS",
+      "Dept of Physics and Astronomy",
+      "PHYSICS AND ASTRONOMY",
+      "PHYSICS",
+      "ASTRONOMY",
+      "Dept of Psychology and Neuroscience",
+      "PSYCHOLOGY AND NEUROSCIENCE",
+      "PSYCHOLOGY",
+      "Dept of Linguistics",
+      "LINGUISTICS",
+      "Dept of Sociology",
+      "SOCIOLOGY",
+      "Dept of Political Science",
+      "POLITICAL SCIENCE"
+    ]
+  },
+
+  "unc:chip": {
+    "id": "unc:chip",
+    "canonical_name": "Carolina Health Informatics Program",
+    "short_name": "CHIP",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "Carolina Health Informatics Program",
+      "CAROLINA HEALTH INFORMATICS PROGRAM",
+      "CHIP",
+      "Health Informatics"
+    ]
+  },
+
+  "unc:rti": {
+    "id": "unc:rti",
+    "canonical_name": "UNC Research Triangle Institute Affiliates",
+    "short_name": "RTI",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "Research Triangle Park",
+      "RESEARCH TRIANGLE",
+      "RTI"
+    ]
+  }
+}
