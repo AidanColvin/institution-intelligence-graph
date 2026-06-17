@@ -76,6 +76,7 @@ async function load() {
 // ── 3D research network ───────────────────────────────────────────────────────
 
 let NETGRAPH = null;
+const NET_KIND = { root: "UNC–Chapel Hill", unit: "School / lab", company: "Company" };
 
 function buildNetwork3D() {
   const el = $("#graph-3d");
@@ -110,10 +111,24 @@ function buildNetwork3D() {
     for (const x of cu) links.push({ source: c.id, target: x.unit_id, kind: "evidence" });
   }
 
+  // People: the most-active faculty cluster around each unit (the third player type).
+  for (const u of activeUnits) {
+    (u.top_faculty || []).slice(0, 6).forEach((f, i) => {
+      if (!f || !f.name) return;
+      const fid = `fac:${u.id}:${i}`;
+      nodes.push({
+        id: fid, name: f.name, type: "faculty", unitName: u.name, _unit: u,
+        val: Math.min(5, 1.2 + Math.sqrt(f.count || 1)),
+      });
+      links.push({ source: fid, target: u.id, kind: "faculty" });
+    });
+  }
+
   const colorOf = n =>
-    n.type === "root" ? "#1d1d1f" :
-    n.type === "unit" ? "#3f7d6e" :
-    n.confidence === "confirmed" ? "#5b8f81" : "#b08d57";
+    n.type === "root"    ? "#1d1d1f" :                                   // UNC core
+    n.type === "unit"    ? "#3f7d6e" :                                   // school / lab (sage)
+    n.type === "faculty" ? "#8a8a8f" :                                   // person (neutral graphite)
+    n.confidence === "confirmed" ? "#5b8f81" : "#b08d57";               // company: sage / taupe
 
   NETGRAPH = ForceGraph3D()(el)
     .graphData({ nodes, links })
@@ -123,19 +138,22 @@ function buildNetwork3D() {
     .nodeVal("val")
     .nodeColor(colorOf)
     .nodeOpacity(0.95)
-    .nodeLabel(n => `<div class="net-tip">${esc(n.name)}</div>`)
-    .linkColor(l => l.kind === "org" ? "rgba(63,125,110,0.80)" : "rgba(63,125,110,0.34)")
-    .linkWidth(l => l.kind === "org" ? 1.4 : 0.7)
+    .nodeLabel(n => n.type === "faculty"
+      ? `<div class="net-tip">${esc(n.name)}<span class="net-tip-sub">${esc(n.unitName || "")}</span></div>`
+      : `<div class="net-tip">${esc(n.name)}<span class="net-tip-sub">${esc(NET_KIND[n.type] || "")}</span></div>`)
+    .linkColor(l => l.kind === "org" ? "rgba(63,125,110,0.80)"
+      : l.kind === "faculty" ? "rgba(120,120,128,0.32)" : "rgba(63,125,110,0.34)")
+    .linkWidth(l => l.kind === "org" ? 1.4 : l.kind === "faculty" ? 0.5 : 0.7)
     .linkOpacity(0.7)
-    .linkDirectionalParticles(l => l.kind === "org" ? 4 : 2)
+    .linkDirectionalParticles(l => l.kind === "org" ? 4 : l.kind === "faculty" ? 0 : 2)
     .linkDirectionalParticleWidth(l => l.kind === "org" ? 2.6 : 1.7)
     .linkDirectionalParticleSpeed(l => l.kind === "org" ? 0.006 : 0.011)
     .linkDirectionalParticleColor(l => l.kind === "org" ? "#1d4d40" : "#3f7d6e")
     .width(el.clientWidth)
     .height(el.clientHeight)
     .onNodeClick(n => {
-      if (n.type === "unit" && n._unit) {
-        openUnit(n._unit);
+      if ((n.type === "unit" || n.type === "faculty") && n._unit) {
+        openUnit(n._unit);                       // a person opens their school/lab profile
       } else if (n.type === "company" && n._company) {
         $("#q").value = n._company.name;
         $("#search-clear").hidden = false;
@@ -149,7 +167,7 @@ function buildNetwork3D() {
   // Spread the layout out so every connection is legible (not crushed into a ball).
   try {
     NETGRAPH.d3Force("charge").strength(-85);
-    NETGRAPH.d3Force("link").distance(l => l.kind === "org" ? 50 : 34);
+    NETGRAPH.d3Force("link").distance(l => l.kind === "org" ? 50 : l.kind === "faculty" ? 16 : 34);
   } catch {}
 
   NETGRAPH.cameraPosition({ z: 440 });
@@ -257,11 +275,26 @@ function wireSearch() {
   const clearBtn = $("#search-clear");
   let timer;
 
+  // Run a search now and bring the answer into view.
+  const go = (q) => {
+    clearTimeout(timer);
+    runSearch(q);
+    requestAnimationFrame(() => $("#results").scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
   input.addEventListener("input", () => {
     clearBtn.hidden = !input.value;
     clearTimeout(timer);
     timer = setTimeout(() => runSearch(input.value), 140);
   });
+  // Pressing Return runs the search immediately and scrolls to the result.
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); go(input.value); input.blur(); }
+  });
+  // A form wrapper (if present) must not reload the page.
+  const form = input.closest("form");
+  if (form) form.addEventListener("submit", e => { e.preventDefault(); go(input.value); });
+
   clearBtn.addEventListener("click", () => {
     input.value = "";
     clearBtn.hidden = true;
@@ -272,9 +305,7 @@ function wireSearch() {
     b.addEventListener("click", () => {
       input.value = b.dataset.q;
       clearBtn.hidden = false;
-      runSearch(b.dataset.q);
-      // Examples/starter cards sit high in the hero — bring the answer into view.
-      requestAnimationFrame(() => $("#results").scrollIntoView({ behavior: "smooth", block: "start" }));
+      go(b.dataset.q);
     })
   );
 }
