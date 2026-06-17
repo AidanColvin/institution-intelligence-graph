@@ -101,7 +101,11 @@ def run_test(limit: int, db_path: str) -> None:
         ).fetchall()
     for (url,) in urls:
         assert url.startswith(NIH_DETAIL_PREFIX), f"Bad source URL: {url}"
-    logger.info("✓ Source URLs are correct NIH detail URLs")
+        # Every source URL must be HTTPS and non-trivially long (a real,
+        # openable record link — never a stub or relative path).
+        assert url.startswith("https://"), f"Source URL not HTTPS: {url}"
+        assert len(url) > 40, f"Source URL suspiciously short: {url}"
+    logger.info("✓ Source URLs are HTTPS, non-empty, and correct NIH detail URLs")
 
     # --- Test 7: fetched_at format ---
     with store.connection(read_only=True) as conn:
