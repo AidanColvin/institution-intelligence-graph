@@ -32,6 +32,25 @@ def _load_graph() -> dict:
 def _graph():
     return _load_graph()
 
+PARTNERSHIPS_PATH = Path(__file__).parent.parent / "frontend" / "partnerships.json"
+
+@lru_cache(maxsize=1)
+def _load_partnerships() -> dict:
+    # Same graceful cold-start contract as the graph: missing/malformed
+    # partnerships.json degrades to an empty inventory, never a 500.
+    empty = {"meta": {"built_at": None, "n_units": 0, "n_faculty": 0, "n_partnerships": 0},
+             "units": [], "faculty": [], "partnerships": [], "_empty": True}
+    if not PARTNERSHIPS_PATH.exists():
+        return empty
+    try:
+        with open(PARTNERSHIPS_PATH) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        return {**empty, "meta": {"error": str(exc)}}
+
+def _partnerships():
+    return _load_partnerships()
+
 # ── normalisation helpers ────────────────────────────────────────────────────
 
 _STRIP = re.compile(r"\b(inc|llc|corp|co|ltd|plc|lp|incorporated|corporation|limited|company)\b\.?", re.I)
@@ -97,6 +116,79 @@ def cors_headers():
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "*",
     }
+
+# ── partnership inventory helpers ─────────────────────────────────────────────
+
+def _cors_json(data, status=200):
+    s, headers, body = json_response(data, status)
+    return s, {**headers, **cors_headers()}, body
+
+def _unit_tree(units: list) -> list:
+    """Nest units into schools -> departments -> labs/centers via parent_unit_id."""
+    by_id = {u["unit_id"]: {**u, "children": []} for u in units}
+    roots = []
+    for u in by_id.values():
+        parent = u.get("parent_unit_id")
+        if parent and parent in by_id and parent != u["unit_id"]:
+            by_id[parent]["children"].append(u)
+        else:
+            roots.append(u)
+    return roots
+
+def _filter_partnerships(rows: list, qs: dict) -> list:
+    """Apply optional ?area=&status=&tier=&unit_id= filters."""
+    def first(key):
+        v = qs.get(key)
+        return v[0] if v else None
+    out = rows
+    for key, field in (("area", "area"), ("status", "status"),
+                       ("tier", "verification_tier"), ("unit_id", "unit_id")):
+        val = first(key)
+        if val:
+            out = [r for r in out if r.get(field) == val]
+    return out
+
+_XLSX_UNIT_COLS = ["unit_id", "parent_unit_id", "unit_name", "unit_type", "description",
+                   "focus_areas", "disciplines", "faculty_count", "student_count",
+                   "website_url", "research_by", "date_of_research", "notes"]
+_XLSX_PARTNERSHIP_COLS = ["unit_name", "unit_type", "faculty_name", "area", "company_name",
+                          "description", "status", "start_date", "end_date", "recurring",
+                          "funding_value", "funding_type", "unc_poc", "company_poc",
+                          "source_url", "verification_tier", "verification_notes",
+                          "research_by", "date_of_research"]
+_XLSX_FACULTY_COLS = ["full_name", "title", "unit_name", "profile_url", "openalex_id",
+                      "research_by", "date_of_research"]
+_XLSX_TIER_FILL = {"Verified": "C6EFCE", "Reported": "FFEB9C", "Inferred": "D9D9D9"}
+
+def _build_inventory_xlsx(data: dict) -> bytes:
+    """Generate UNC_Partnership_Inventory.xlsx in-memory from partnerships.json."""
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    def sheet(ws, columns, rows):
+        ws.append(columns)
+        for cell in ws[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="1D1D1F")
+        tier_idx = columns.index("verification_tier") + 1 if "verification_tier" in columns else None
+        for r in rows:
+            ws.append([r.get(c) for c in columns])
+            if tier_idx:
+                color = _XLSX_TIER_FILL.get(r.get("verification_tier"))
+                if color:
+                    ws.cell(row=ws.max_row, column=tier_idx).fill = PatternFill("solid", fgColor=color)
+        ws.freeze_panes = "A2"
+
+    wb = Workbook()
+    sheet(wb.active, _XLSX_UNIT_COLS, data.get("units", []))
+    wb.active.title = "UNC_Units"
+    sheet(wb.create_sheet("Partnerships"), _XLSX_PARTNERSHIP_COLS, data.get("partnerships", []))
+    sheet(wb.create_sheet("Faculty"), _XLSX_FACULTY_COLS, data.get("faculty", []))
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
 
 # ── route handler ─────────────────────────────────────────────────────────────
 
@@ -169,6 +261,60 @@ def handle(method: str, path: str, qs: dict) -> tuple[int, dict, bytes]:
             return status, {**headers, **cors_headers()}, body
         status, headers, body = json_response(u)
         return status, {**headers, **cors_headers()}, body
+
+    # ── partnership inventory endpoints ──────────────────────────────────────
+    pg = _partnerships()
+
+    if path in ("/units", "/api/units"):
+        return _cors_json(pg.get("units", []))
+    if path in ("/units/tree", "/api/units/tree"):
+        return _cors_json(_unit_tree(pg.get("units", [])))
+
+    if path in ("/faculty", "/api/faculty"):
+        return _cors_json(pg.get("faculty", []))
+    m = re.match(r"^/?(?:api/)?faculty/(.+)$", path)
+    if m:
+        fid = unquote(m.group(1))
+        fac = next((f for f in pg.get("faculty", []) if f.get("faculty_id") == fid), None)
+        if not fac:
+            return _cors_json({"error": f"Faculty '{fid}' not found"}, 404)
+        ps = [p for p in pg.get("partnerships", []) if p.get("faculty_id") == fid]
+        return _cors_json({**fac, "partnerships": ps})
+
+    # export must precede the bare /partnerships match
+    if path in ("/partnerships/export", "/api/partnerships/export"):
+        if pg.get("_empty"):
+            return _cors_json({"error": "inventory not built"}, 503)
+        xlsx = _build_inventory_xlsx(pg)
+        headers = {
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Disposition": "attachment; filename=UNC_Partnership_Inventory.xlsx",
+            **cors_headers(),
+        }
+        return 200, headers, xlsx
+
+    if path in ("/partnerships", "/api/partnerships"):
+        rows = _filter_partnerships(pg.get("partnerships", []), qs)
+        return _cors_json({"count": len(rows), "partnerships": rows})
+
+    # /unit/{id}/partnerships, /unit/{id}/faculty, /unit/{id}
+    m = re.match(r"^/?(?:api/)?unit/(.+)/partnerships$", path)
+    if m:
+        uid = unquote(m.group(1))
+        rows = [p for p in pg.get("partnerships", []) if p.get("unit_id") == uid]
+        return _cors_json({"unit_id": uid, "count": len(rows), "partnerships": rows})
+    m = re.match(r"^/?(?:api/)?unit/(.+)/faculty$", path)
+    if m:
+        uid = unquote(m.group(1))
+        fac = [f for f in pg.get("faculty", []) if f.get("unit_id") == uid]
+        return _cors_json({"unit_id": uid, "count": len(fac), "faculty": fac})
+    m = re.match(r"^/?(?:api/)?unit/([^/]+)$", path)
+    if m:
+        uid = unquote(m.group(1))
+        unit = next((u for u in pg.get("units", []) if u.get("unit_id") == uid), None)
+        if not unit:
+            return _cors_json({"error": f"Unit '{uid}' not found"}, 404)
+        return _cors_json(unit)
 
     # 404
     status, headers, body = json_response({"error": "Not found", "path": path}, 404)

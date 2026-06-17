@@ -30,7 +30,8 @@ from api.index import handle  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("dev_server")
 
-API_PREFIXES = ("/health", "/stats", "/freshness", "/match/", "/unit/", "/api/")
+API_PREFIXES = ("/health", "/stats", "/freshness", "/match/", "/unit/", "/units",
+                "/faculty", "/partnerships", "/api/")
 
 
 def _is_api(path: str) -> bool:

@@ -4,7 +4,7 @@
     {
       "src": "api/index.py",
       "use": "@vercel/python",
-      "config": { "includeFiles": "frontend/graph.json" }
+      "config": { "includeFiles": "frontend/*.json" }
     },
     {
       "src": "frontend/**",
@@ -17,6 +17,12 @@
     { "src": "/freshness", "dest": "api/index.py" },
     { "src": "/match/(.*)", "dest": "api/index.py" },
     { "src": "/unit/(.*)", "dest": "api/index.py" },
+    { "src": "/units", "dest": "api/index.py" },
+    { "src": "/units/(.*)", "dest": "api/index.py" },
+    { "src": "/faculty", "dest": "api/index.py" },
+    { "src": "/faculty/(.*)", "dest": "api/index.py" },
+    { "src": "/partnerships", "dest": "api/index.py" },
+    { "src": "/partnerships/(.*)", "dest": "api/index.py" },
     { "src": "/api/(.*)", "dest": "api/index.py" },
     { "src": "/", "dest": "frontend/index.html" },
     { "src": "/(.*)", "dest": "frontend/$1" }
