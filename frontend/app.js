@@ -56,9 +56,22 @@ async function load() {
     GRAPH = await res.json();
   } catch(e) {
     console.error("Failed to load graph.json:", e);
-    $("#nav-stats").innerHTML = `<span class="nav-stat" style="color:#c00">graph.json not found — run the build &amp; export</span>`;
+    GRAPH = null;
+  }
+
+  // Distinct third failure state: the graph itself never loaded (missing/stale
+  // deploy). Keep the search box interactive, flag it so runSearch/renderResults
+  // show a dedicated "not built" message, and surface it now instead of leaving
+  // a blank panel.
+  if (!GRAPH || !GRAPH.units) {
+    window.__GRAPH_LOAD_FAILED = true;
+    $("#nav-stats").innerHTML = `<span class="nav-stat" style="color:#c00">graph.json not built — run the build &amp; export</span>`;
+    wireSearch();
+    const results = $("#results");
+    if (results) { results.hidden = false; renderResults("", null, []); }
     return;
   }
+
   UNIT_BY_ID = Object.fromEntries(GRAPH.units.map(u => [u.id, u]));
   COMPANY_INDEX = GRAPH.companies.map(c => ({ norm: normName(c.name), company: c }));
 
@@ -334,6 +347,10 @@ function runSearch(query) {
   if (!query) { results.hidden = true; return; }
   results.hidden = false;
 
+  // Graph never loaded — render the dedicated "not built" state and skip local
+  // matching, which would dereference a null GRAPH.
+  if (window.__GRAPH_LOAD_FAILED) { renderResults(query, null, []); return; }
+
   const seq = ++SEARCH_SEQ;
 
   // 1) Render local matches instantly — snappy, always works.
@@ -364,6 +381,17 @@ function renderResults(query, company, topical) {
   const evPanel  = $("#evidence-panel");
   const topPanel = $("#topical-panel");
   const noRes    = $("#no-results");
+
+  // State 1 of 3: the graph never loaded. Distinct from "too short" and
+  // "genuinely no match" below — show build instructions, not a search miss.
+  if (window.__GRAPH_LOAD_FAILED) {
+    noRes.hidden = false; evPanel.hidden = true; topPanel.hidden = true;
+    const titleEl = noRes.querySelector("h3");
+    const msgEl = $("#no-results-msg");
+    if (titleEl) titleEl.textContent = "Data not yet available";
+    msgEl.innerHTML = `The research graph hasn't been built yet. Run <code>python scripts/build_graph.py</code> locally, then <code>python scripts/export_graph.py</code>, and commit <code>frontend/graph.json</code>.`;
+    return;
+  }
 
   evPanel.hidden  = !company;
   topPanel.hidden = !topical.length;
