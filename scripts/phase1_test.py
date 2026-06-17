@@ -27,11 +27,23 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("phase1_test")
 
-EXPECTED_SCHOOLS = {
-    "unc:root", "unc:gillings", "unc:som", "unc:lineberger",
-    "unc:eshelman", "unc:kenan_flagler", "unc:law", "unc:dentistry",
-    "unc:nursing", "unc:social_work", "unc:education", "unc:information",
-    "unc:government", "unc:arts_sciences",
+# Units NIH genuinely funds. NIH classifies grants by a health-science
+# `dept_type` vocabulary (INTERNAL MEDICINE, PHARMACOLOGY, GENETICS, ...), so
+# these are the only UNC units a NIH-only Phase 1 can legitimately reach. We
+# assert real coverage of these — and never fabricate edges for the rest.
+NIH_CORE_UNITS = {
+    "unc:root", "unc:som", "unc:gillings", "unc:eshelman",
+    "unc:nursing", "unc:arts_sciences",
+}
+
+# Schools from the Plan.md 13-school target that NIH does not fund (Law, Business,
+# Journalism, Government, Library Science, Education, Social Work, Dentistry) plus
+# centers routed only by non-grant edge types (Lineberger via trial conditions).
+# These are reported as "0 NIH grants — needs later extractor", not asserted.
+NIH_OUT_OF_SCOPE = {
+    "unc:kenan_flagler", "unc:law", "unc:dentistry", "unc:social_work",
+    "unc:education", "unc:information", "unc:government", "unc:hussman",
+    "unc:lineberger",
 }
 NIH_DETAIL_PREFIX = "https://reporter.nih.gov/project-details/"
 
@@ -85,14 +97,25 @@ def run_test(limit: int, db_path: str) -> None:
 
     if limit < 200:
         logger.info(
-            "  (limit=%d; run with --limit 200 for full school coverage check)", limit
+            "  (limit=%d; run with --limit 200 to assert NIH core-unit coverage)", limit
         )
     else:
-        missing = EXPECTED_SCHOOLS - covered_units
-        if missing:
-            logger.warning("Schools with 0 edges (may need more data): %s", missing)
-        else:
-            logger.info("✓ All 14 expected units have ≥1 edge")
+        # Assert: every unit NIH actually funds must have ≥1 grant edge.
+        missing_core = NIH_CORE_UNITS - covered_units
+        assert not missing_core, (
+            f"NIH core units with 0 grants: {sorted(missing_core)} "
+            f"(covered: {sorted(covered_units)})"
+        )
+        logger.info("✓ All %d NIH core units have ≥1 grant", len(NIH_CORE_UNITS))
+
+        # Report (do NOT fabricate): schools NIH does not fund are expected to be
+        # empty here and must be populated by NSF/USAspending/ClinicalTrials in
+        # later phases. Surfacing this keeps the coverage claim honest.
+        uncovered = sorted(NIH_OUT_OF_SCOPE - covered_units)
+        logger.info(
+            "ℹ %d/13-target schools have 0 NIH grants (expected — NIH funds health "
+            "science only; needs later extractor): %s", len(uncovered), uncovered
+        )
 
     # --- Test 6: Source URLs ---
     with store.connection(read_only=True) as conn:
@@ -122,8 +145,8 @@ def run_test(limit: int, db_path: str) -> None:
     logger.info("  NIH records: %d", len(records))
     logger.info("  Edges: %d", total_edges)
     logger.info("  Units covered: %d", len(covered_units))
-    logger.info("  Top units by edge count:")
-    for unit_id, cnt in sorted(edge_by_unit.items(), key=lambda x: -x[1])[:8]:
+    logger.info("  Top 5 units by edge count:")
+    for unit_id, cnt in sorted(edge_by_unit.items(), key=lambda x: -x[1])[:5]:
         logger.info("    %-30s  %d edges", unit_id, cnt)
 
 

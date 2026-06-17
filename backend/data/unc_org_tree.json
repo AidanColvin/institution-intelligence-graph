@@ -299,6 +299,23 @@
     ]
   },
 
+  "unc:hussman": {
+    "id": "unc:hussman",
+    "canonical_name": "Hussman School of Journalism and Media",
+    "short_name": "Hussman",
+    "ror_id": null,
+    "parent_id": "unc:root",
+    "aliases": [
+      "Hussman School of Journalism and Media",
+      "HUSSMAN SCHOOL OF JOURNALISM AND MEDIA",
+      "School of Journalism and Media",
+      "SCHOOL OF JOURNALISM AND MEDIA",
+      "School of Media and Journalism",
+      "UNC Hussman",
+      "Journalism and Media"
+    ]
+  },
+
   "unc:chip": {
     "id": "unc:chip",
     "canonical_name": "Carolina Health Informatics Program",
