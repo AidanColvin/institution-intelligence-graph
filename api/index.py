@@ -19,8 +19,15 @@ GRAPH_PATH = Path(__file__).parent.parent / "frontend" / "graph.json"
 
 @lru_cache(maxsize=1)
 def _load_graph() -> dict:
-    with open(GRAPH_PATH) as f:
-        return json.load(f)
+    # Graceful cold-start: a missing or malformed graph.json must degrade to an
+    # empty graph (HTTP 200 "degraded"), never crash the function with a 500.
+    if not GRAPH_PATH.exists():
+        return {"meta": {"built_at": None, "n_companies": 0, "n_units_with_data": 0}, "units": [], "companies": [], "_empty": True}
+    try:
+        with open(GRAPH_PATH) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        return {"meta": {"built_at": None, "error": str(exc)}, "units": [], "companies": [], "_empty": True}
 
 def _graph():
     return _load_graph()
@@ -102,6 +109,11 @@ def handle(method: str, path: str, qs: dict) -> tuple[int, dict, bytes]:
     # /health
     if path in ("/health", "/api/health"):
         meta = graph.get("meta", {})
+        if graph.get("_empty"):
+            # Graph not built / unreadable — report degraded but stay HTTP 200 so
+            # the frontend health check doesn't treat it as a hard failure.
+            status, headers, body = json_response({"status": "degraded", "reason": "graph not built", "service": "unc-research-graph"})
+            return status, {**headers, **cors_headers()}, body
         status, headers, body = json_response({"status": "ok", "service": "unc-research-graph", "n_companies": meta.get("n_companies"), "n_units": meta.get("n_units_with_data"), "built_at": meta.get("built_at")})
         return status, {**headers, **cors_headers()}, body
 
