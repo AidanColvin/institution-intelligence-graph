@@ -160,6 +160,44 @@
     </div>
   </div>
 
+  <!-- UNC Partnership Map -->
+  <section class="section wrap pmap-section" id="partnership-map">
+    <div class="section-head">
+      <div>
+        <h2 class="section-title">UNC Partnership Map</h2>
+        <p class="section-sub" id="pmap-sub">Every UNC school, department, lab, center &amp; faculty member — and the industry partnerships in public data. Click a card to see its evidence.</p>
+      </div>
+      <button class="pmap-export" id="pmap-export" title="Download UNC_Partnership_Inventory.xlsx">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export to Excel
+      </button>
+    </div>
+
+    <div class="pmap-tabs" id="pmap-tabs">
+      <button class="pmap-tab active" data-view="schools">Schools &amp; Departments</button>
+      <button class="pmap-tab" data-view="labs">Labs &amp; Centers</button>
+      <button class="pmap-tab" data-view="faculty">Faculty</button>
+    </div>
+
+    <div class="pmap-grid" id="pmap-grid"></div>
+
+    <div class="pmap-table-wrap">
+      <div class="pmap-filters">
+        <span class="pmap-selected" id="pmap-selected">All partnerships</span>
+        <select id="pmap-f-area" aria-label="Filter by area"><option value="">All areas</option></select>
+        <select id="pmap-f-status" aria-label="Filter by status"><option value="">All statuses</option></select>
+        <select id="pmap-f-tier" aria-label="Filter by verification tier"><option value="">All tiers</option></select>
+        <button class="pmap-clear" id="pmap-clear">Reset</button>
+      </div>
+      <table class="pmap-table" id="pmap-table">
+        <thead>
+          <tr><th>Area</th><th>Company</th><th>Status</th><th>Verified</th><th>Source</th><th>Date</th></tr>
+        </thead>
+        <tbody id="pmap-tbody"></tbody>
+      </table>
+      <div class="pmap-tablecount" id="pmap-tablecount"></div>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer class="footer">
     <div class="wrap footer-inner">
@@ -183,5 +221,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/3d-force-graph/dist/3d-force-graph.min.js"></script>
   <script src="app.js"></script>
+  <script src="unc_units.js"></script>
 </body>
 </html>

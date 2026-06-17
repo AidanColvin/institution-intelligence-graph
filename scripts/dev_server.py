@@ -35,7 +35,16 @@ API_PREFIXES = ("/health", "/stats", "/freshness", "/match/", "/unit/", "/units"
 
 
 def _is_api(path: str) -> bool:
-    return any(path == p or path.startswith(p) for p in API_PREFIXES)
+    # Match an API route exactly or as a "/sub" path — but NOT as a loose prefix,
+    # so a static file like /partnerships.json is served, not routed to the API.
+    # (Mirrors Vercel, whose route regexes are fully anchored.)
+    for p in API_PREFIXES:
+        if p.endswith("/"):
+            if path == p[:-1] or path.startswith(p):
+                return True
+        elif path == p or path.startswith(p + "/"):
+            return True
+    return False
 
 
 class DevHandler(SimpleHTTPRequestHandler):

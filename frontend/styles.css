@@ -1360,3 +1360,77 @@ input#q::-webkit-search-cancel-button { -webkit-appearance: none; }
   #graph-3d { height: 420px; border-radius: var(--r-lg); }
   .network-legend { gap: 14px; font-size: 12px; }
 }
+
+/* ── UNC Partnership Map ──────────────────────────────────────────────────── */
+.pmap-section { scroll-margin-top: 80px; }
+.pmap-section .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.pmap-export {
+  font: 600 0.86rem var(--font); color: #fff; background: var(--accent);
+  border: none; border-radius: var(--r-pill); padding: 9px 18px; cursor: pointer;
+  white-space: nowrap; transition: background .2s var(--ease); box-shadow: var(--shadow-sm);
+}
+.pmap-export:hover { background: var(--accent-strong); }
+.pmap-export svg { vertical-align: -2px; margin-right: 6px; }
+
+.pmap-tabs { display: flex; gap: 6px; margin: 18px 0 20px; border-bottom: 1px solid var(--hairline); }
+.pmap-tab {
+  font: 600 0.92rem var(--font); color: var(--muted); background: none; border: none;
+  padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; transition: color .15s var(--ease), border-color .15s var(--ease);
+}
+.pmap-tab:hover { color: var(--text); }
+.pmap-tab.active { color: var(--accent-strong); border-bottom-color: var(--accent); }
+
+.pmap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 26px; }
+.pmap-card {
+  text-align: left; background: var(--card); border: 1px solid var(--hairline);
+  border-radius: var(--r-md); padding: 16px; cursor: pointer; transition: box-shadow .2s var(--ease), border-color .2s var(--ease), transform .2s var(--ease);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.pmap-card:hover { box-shadow: var(--shadow); border-color: var(--accent-line); transform: translateY(-2px); }
+.pmap-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.pmap-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.pmap-card-name { font-weight: 650; font-size: 0.98rem; line-height: 1.25; color: var(--text); }
+.pmap-type { font: 600 0.66rem var(--font); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: var(--surface); border-radius: var(--r-pill); padding: 3px 9px; white-space: nowrap; }
+.pmap-card-stat { font-size: 0.84rem; color: var(--muted); }
+.pmap-card-stat b { color: var(--text); font-weight: 650; }
+.pmap-cos { display: flex; flex-wrap: wrap; gap: 5px; }
+.pmap-co { font-size: 0.74rem; color: var(--graphite); background: var(--accent-soft); border-radius: var(--r-pill); padding: 3px 9px; }
+.pmap-faculty-row { display: grid; grid-template-columns: 1.6fr 1.4fr 0.7fr; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: var(--r-sm); cursor: pointer; background: var(--card); }
+.pmap-faculty-row:hover { border-color: var(--accent-line); box-shadow: var(--shadow-sm); }
+.pmap-faculty-row.active { border-color: var(--accent); }
+.pmap-fac-name { font-weight: 600; color: var(--text); font-size: 0.92rem; }
+.pmap-fac-sub { font-size: 0.8rem; color: var(--muted); }
+.pmap-fac-num { text-align: right; font-size: 0.84rem; color: var(--muted); }
+.pmap-fac-num b { color: var(--accent-strong); }
+.pmap-grid.list { grid-template-columns: 1fr; gap: 8px; }
+
+.pmap-table-wrap { border: 1px solid var(--hairline); border-radius: var(--r-md); overflow: hidden; background: var(--card); }
+.pmap-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--hairline); background: var(--surface-2); }
+.pmap-selected { font-weight: 650; color: var(--text); margin-right: auto; font-size: 0.92rem; }
+.pmap-filters select {
+  font: 500 0.84rem var(--font); color: var(--text); background: var(--card);
+  border: 1px solid var(--hairline); border-radius: var(--r-sm); padding: 7px 10px; cursor: pointer;
+}
+.pmap-clear { font: 500 0.82rem var(--font); color: var(--muted); background: none; border: none; cursor: pointer; padding: 7px 8px; }
+.pmap-clear:hover { color: var(--accent-strong); }
+.pmap-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.pmap-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 11px 16px; border-bottom: 1px solid var(--hairline); background: var(--surface-2); white-space: nowrap; position: sticky; top: 0; }
+.pmap-table td { padding: 11px 16px; border-bottom: 1px solid var(--hairline-2); color: var(--text); vertical-align: top; }
+.pmap-table tr:last-child td { border-bottom: none; }
+.pmap-table tbody tr:hover { background: var(--surface-2); }
+.pmap-company { font-weight: 600; }
+.pmap-desc { color: var(--muted); font-size: 0.8rem; display: block; margin-top: 2px; max-width: 420px; }
+.pmap-src { color: var(--accent-strong); text-decoration: none; font-weight: 600; }
+.pmap-src:hover { text-decoration: underline; }
+.ptier { font: 600 0.72rem var(--font); border-radius: var(--r-pill); padding: 3px 10px; white-space: nowrap; }
+.ptier.verified { background: #e3f3ea; color: #2f6b54; }
+.ptier.reported { background: #fbf1d4; color: #8a6d1e; }
+.ptier.inferred { background: #ececef; color: #5b5b61; }
+.pmap-empty { padding: 36px 16px; text-align: center; color: var(--muted); font-size: 0.92rem; }
+.pmap-tablecount { font-size: 0.8rem; color: var(--faint); padding: 10px 16px; border-top: 1px solid var(--hairline-2); }
+@media (max-width: 640px) {
+  .pmap-faculty-row { grid-template-columns: 1fr auto; }
+  .pmap-fac-mid { display: none; }
+  .pmap-desc { display: none; }
+}
