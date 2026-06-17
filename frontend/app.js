@@ -158,7 +158,7 @@ function buildNetwork3D() {
         $("#q").value = n._company.name;
         $("#search-clear").hidden = false;
         runSearch(n._company.name);
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        scrollToResults();
       } else if (n.type === "root") {
         NETGRAPH.cameraPosition({ x: 0, y: 0, z: 360 }, { x: 0, y: 0, z: 0 }, 900);
       }
@@ -273,6 +273,21 @@ function renderNavStats() {
 
 // ── search ────────────────────────────────────────────────────────────────────
 
+// Bring the results section into view below the sticky nav. Waits two frames —
+// one for #results' `hidden` to be removed inside renderResults, one for layout —
+// so we scroll to a visible element with its final geometry (a hidden element
+// has no box, so scrolling would silently do nothing).
+function scrollToResults() {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const r = document.getElementById("results");
+    if (r && !r.hidden) {
+      const navH = document.getElementById("nav")?.offsetHeight || 64;
+      const top = r.getBoundingClientRect().top + window.scrollY - navH - 12;
+      window.scrollTo({ top, behavior: "smooth" });
+    }
+  }));
+}
+
 function wireSearch() {
   const input = $("#q");
   const clearBtn = $("#search-clear");
@@ -282,7 +297,7 @@ function wireSearch() {
   const go = (q) => {
     clearTimeout(timer);
     runSearch(q);
-    requestAnimationFrame(() => $("#results").scrollIntoView({ behavior: "smooth", block: "start" }));
+    scrollToResults();
   };
 
   input.addEventListener("input", () => {
@@ -542,7 +557,7 @@ function renderCompanyChips() {
       $("#q").value = btn.dataset.co;
       $("#search-clear").hidden = false;
       runSearch(btn.dataset.co);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollToResults();
     })
   );
 }
@@ -590,7 +605,7 @@ function openUnit(u) {
       $("#q").value = btn.dataset.co;
       $("#search-clear").hidden = false;
       runSearch(btn.dataset.co);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollToResults();
     })
   );
   $("#unit-modal").hidden = false;
