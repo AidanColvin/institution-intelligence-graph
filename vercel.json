@@ -14,6 +14,7 @@
   "routes": [
     { "src": "/health", "dest": "api/index.py" },
     { "src": "/stats", "dest": "api/index.py" },
+    { "src": "/freshness", "dest": "api/index.py" },
     { "src": "/match/(.*)", "dest": "api/index.py" },
     { "src": "/unit/(.*)", "dest": "api/index.py" },
     { "src": "/api/(.*)", "dest": "api/index.py" },

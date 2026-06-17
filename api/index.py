@@ -123,6 +123,17 @@ def handle(method: str, path: str, qs: dict) -> tuple[int, dict, bytes]:
         status, headers, body = json_response({"meta": meta, "n_units": len(graph.get("units", [])), "n_companies": len(graph.get("companies", []))})
         return status, {**headers, **cors_headers()}, body
 
+    # /freshness — the build/coverage stamp referenced by the mission
+    if path in ("/freshness", "/api/freshness"):
+        meta = graph.get("meta", {})
+        status, headers, body = json_response({
+            "built_at": meta.get("built_at"),
+            "n_companies": meta.get("n_companies", 0),
+            "n_units_with_data": meta.get("n_units_with_data", 0),
+            "counts": meta.get("counts", {}),
+        })
+        return status, {**headers, **cors_headers()}, body
+
     # /match/{company}
     m = re.match(r"^/?(?:api/)?match/(.+)$", path)
     if m:
