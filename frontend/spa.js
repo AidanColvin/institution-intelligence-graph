@@ -957,6 +957,35 @@
     } catch (_) {}
     Graph.cooldownTime(4000).warmupTicks(30).d3VelocityDecay(0.28);
 
+    // ── grouping force: a small custom d3 force (no extra deps) that, in the
+    //    'tier'/'layered' modes, pulls each node toward a target position so the
+    //    SAME relationships visibly RE-GROUP in 3D — hub-and-spoke by school,
+    //    then split into confidence-tier clusters, then concentric role shells.
+    //    In 'school' mode it does nothing, leaving the natural force layout. ──
+    let layoutMode = "school";
+    let _gnodes = [];
+    function groupForce(alpha) {
+      if (layoutMode === "school") return;
+      const k = 0.085 * alpha;
+      for (const n of _gnodes) {
+        if (layoutMode === "tier") {
+          const tx = n.group === "confirmed" ? -150 : n.group === "probable" ? 150 : 0;
+          const ty = n.group === "unit" ? 120 : n.group === "root" ? 0 : -45;
+          n.vx += (tx - n.x) * k;
+          n.vy += (ty - n.y) * k;
+        } else if (layoutMode === "layered") {
+          const tr = n.group === "root" ? 0 : n.group === "unit" ? 70 : 160;
+          const d = Math.sqrt(n.x * n.x + n.y * n.y + n.z * n.z) || 1e-6;
+          const f = ((tr - d) / d) * k;
+          n.vx += n.x * f; n.vy += n.y * f; n.vz += n.z * f;
+        }
+      }
+    }
+    groupForce.initialize = (nodes) => { _gnodes = nodes; };
+    try { Graph.d3Force("group", groupForce); } catch (_) {}
+    const MODE_ORDER = ["school", "tier", "layered"];
+    const MODE_LABEL = { school: "Grouped by school", tier: "Grouped by confidence tier", layered: "Layered by role" };
+
     Graph.width(stage.clientWidth).height(stage.clientHeight);
     const onResize = () => Graph.width(stage.clientWidth).height(stage.clientHeight);
     window.addEventListener("resize", onResize, { passive: true });
@@ -1020,26 +1049,30 @@
     if (replayBtn) replayBtn.addEventListener("click", build);
     build();
 
-    // ── living neural net: every few seconds nudge the forces and re-heat so
-    //    the network keeps changing shape and structure — clusters drift apart,
-    //    contract and re-form — instead of freezing into one static layout. ──
-    let phase = 0;
-    (function morph() {
+    // ── living neural net: cycle the grouping every several seconds so the same
+    //    relationships visibly RESTRUCTURE in 3D — hub-and-spoke by school, then
+    //    split into confidence-tier groups, then concentric role layers. Each
+    //    transition re-heats the layout so nodes migrate to their new groups and
+    //    the connections between them re-route on screen. ──
+    let modeIdx = 0;
+    (function regroup() {
       morphTimer = setTimeout(() => {
         if (!document.body.contains(stage)) return; // view torn down → stop
         if (!building) {
-          phase += 1;
-          const charge = -120 + Math.sin(phase * 0.6) * 55;        // -65 .. -175
-          const linkD = 34 + Math.sin(phase * 0.9 + 1) * 12;       // 22 .. 46
+          modeIdx = (modeIdx + 1) % MODE_ORDER.length;
+          layoutMode = MODE_ORDER[modeIdx];
           try {
-            Graph.d3Force("charge").strength(charge);
-            const lf = Graph.d3Force("link");
-            if (lf) lf.distance((l) => (l.kind === "anchor" ? linkD + 16 : linkD));
+            // ease repulsion in the grouped modes so clusters separate cleanly
+            Graph.d3Force("charge").strength(layoutMode === "school" ? -120 : -65);
             if (Graph.d3ReheatSimulation) Graph.d3ReheatSimulation();
           } catch (_) {}
+          if (statusEl) {
+            const nc = (Graph.graphData().nodes || []).length;
+            statusEl.textContent = `${MODE_LABEL[layoutMode]} · ${nc.toLocaleString()} nodes`;
+          }
         }
-        morph();
-      }, 6000);
+        regroup();
+      }, 8500);
     })();
 
     // drive the controls every frame (autoRotate + damping) and tear everything
