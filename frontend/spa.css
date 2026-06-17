@@ -287,8 +287,8 @@ select.es:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px
 .toast.ok::before { content:"✓ "; }
 
 @media (max-width:640px){
-  .nav-inner { height:50px; gap:10px; }
-  .nav-title { display:none; }
+  .nav-inner { height:auto; min-height:50px; gap:6px 10px; flex-wrap:wrap; padding:8px 0; }
+  .nav-brand { width:100%; }
   .hero { padding:56px 0 28px; }
   .hero p { font-size:18px; }
   .page-title { font-size:30px; }
