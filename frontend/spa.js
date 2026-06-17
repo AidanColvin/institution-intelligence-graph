@@ -24,9 +24,14 @@
   async function api(path, { signal, timeoutMs = 12000 } = {}) {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort("timeout"), timeoutMs);
-    const sig = signal || ctrl.signal;
+    // Always fetch with our own controller (so the timeout fires); chain any
+    // caller-supplied signal into it so an external abort still cancels.
+    if (signal) {
+      if (signal.aborted) ctrl.abort(signal.reason);
+      else signal.addEventListener("abort", () => ctrl.abort(signal.reason), { once: true });
+    }
     try {
-      const res = await fetch(API + path, { signal: sig, headers: { Accept: "application/json" } });
+      const res = await fetch(API + path, { signal: ctrl.signal, headers: { Accept: "application/json" } });
       if (!res.ok) {
         const err = new Error("HTTP " + res.status);
         err.status = res.status;
@@ -238,6 +243,10 @@
   }
 
   let FRESHNESS = null;
+  // Network view: render epoch + in-flight fetch handle, so a route change that
+  // re-enters #/network can supersede a still-loading render (prevents stacking
+  // two ForceGraph3D instances on the same #graph-3d node).
+  let NET_TOKEN = 0, NET_ABORT = null;
   function coverageBar() {
     if (!FRESHNESS) return "";
     const c = FRESHNESS.counts || {};
@@ -297,8 +306,9 @@
         [c.faculty, "faculty"],
         [s.n_units ?? c.unc_units, "units"],
       ].filter(([n]) => n != null);
-      $("#statbar").innerHTML = pills.map(([n, l]) => `<span class="stat-pill"><b>${(+n).toLocaleString()}</b> ${esc(l)}</span>`).join("");
-    } catch (e) { console.error("home /stats failed:", e); $("#statbar").innerHTML = ""; }
+      const sb = $("#statbar");                 // may be gone if the user navigated away mid-fetch
+      if (sb) sb.innerHTML = pills.map(([n, l]) => `<span class="stat-pill"><b>${(+n).toLocaleString()}</b> ${esc(l)}</span>`).join("");
+    } catch (e) { console.error("home /stats failed:", e); const sb = $("#statbar"); if (sb) sb.innerHTML = ""; }
   }
 
   // ── view: SEARCH RESULTS ─────────────────────────────────────────────────────
@@ -434,7 +444,8 @@
 
     let units;
     try { units = UNITS_CACHE || (UNITS_CACHE = await api("/units")); }
-    catch (e) { console.error("/units failed:", e); $("#u-grid").innerHTML = errorHTML(e); return; }
+    catch (e) { console.error("/units failed:", e); const el = $("#u-grid"); if (el) el.innerHTML = errorHTML(e); return; }
+    if (!$("#u-grid")) return;   // navigated away during the fetch
 
     const schools = units.filter((u) => u.unit_type === "School" || u.unit_type === "College")
       .map((u) => ({ id: u.unit_id, name: u.unit_name })).sort((a, b) => a.name.localeCompare(b.name));
@@ -677,7 +688,8 @@
       unitOpts = units.filter((u) => u.unit_id !== "unc:root")
         .map((u) => ({ unit_id: u.unit_id, unit_name: u.unit_name }))
         .sort((a, b) => a.unit_name.localeCompare(b.unit_name));
-    } catch (e) { console.error("/partnerships failed:", e); $("#p-body").innerHTML = errorHTML(e); return; }
+    } catch (e) { console.error("/partnerships failed:", e); const el = $("#p-body"); if (el) el.innerHTML = errorHTML(e); return; }
+    if (!$("#p-body")) return;   // navigated away during the fetch
 
     const areas = [...new Set(rows.map((r) => r.area).filter(Boolean))].sort();
     const statuses = [...new Set(rows.map((r) => r.status).filter(Boolean))].sort();
@@ -806,7 +818,8 @@
 
     let fac;
     try { fac = FACULTY_CACHE || (FACULTY_CACHE = await api("/faculty")); }
-    catch (e) { console.error("/faculty failed:", e); $("#fac-grid").innerHTML = errorHTML(e); return; }
+    catch (e) { console.error("/faculty failed:", e); const el = $("#fac-grid"); if (el) el.innerHTML = errorHTML(e); return; }
+    if (!$("#fac-grid")) return;   // navigated away during the fetch
 
     let lastRows = [];
     const FAC_EXPORT_COLS = [
@@ -853,9 +866,24 @@
         </div></div>
     </div>`;
 
+    // Concurrency guard: claim a render epoch, capture the stage NOW (before any
+    // await), and cancel any earlier in-flight network fetch. If the user leaves
+    // and re-enters #/network during the fetch, the stale render bails instead of
+    // building a second graph on the new live node.
+    const myToken = ++NET_TOKEN;
+    const stage = $("#graph-3d");
+    if (NET_ABORT) { try { NET_ABORT.abort("superseded"); } catch (_) {} }
+    NET_ABORT = new AbortController();
+
     let g;
-    try { g = await api("/api/graph", { timeoutMs: 20000 }); }
-    catch (e) { console.error("/api/graph failed:", e); $("#graph-3d").parentElement.innerHTML = errorHTML(e); return; }
+    try { g = await api("/api/graph", { timeoutMs: 20000, signal: NET_ABORT.signal }); }
+    catch (e) {
+      if (myToken !== NET_TOKEN) return;            // superseded — don't touch the new view
+      console.error("/api/graph failed:", e);
+      if (document.body.contains(stage)) stage.parentElement.innerHTML = errorHTML(e);
+      return;
+    }
+    if (myToken !== NET_TOKEN || !document.body.contains(stage)) return;  // superseded mid-fetch
 
     wireExport("net-exp", () => ({
       title: "UNC Research Network — Companies", filename: "UNC_Network_Companies",
@@ -900,7 +928,7 @@
 
     const COLORS = { root: "#1d1d1f", unit: "#3f7d6e", confirmed: "#5b8def", probable: "#9a8654" };
     const GROUP_LABEL = { root: "UNC–Chapel Hill", unit: "School / unit", confirmed: "Company · confirmed", probable: "Company · probable" };
-    const stage = $("#graph-3d");
+    // `stage` was captured up front (before the await) for the concurrency guard.
 
     // hover state: highlight a node, its neighbours and the links between them
     const hlNodes = new Set();
@@ -1058,7 +1086,9 @@
     (function regroup() {
       morphTimer = setTimeout(() => {
         if (!document.body.contains(stage)) return; // view torn down → stop
-        if (!building) {
+        // skip the (heavy) re-heat while the tab is backgrounded — no point
+        // restructuring something nobody is looking at.
+        if (!building && !document.hidden) {
           modeIdx = (modeIdx + 1) % MODE_ORDER.length;
           layoutMode = MODE_ORDER[modeIdx];
           try {
@@ -1075,6 +1105,10 @@
       }, 8500);
     })();
 
+    // pause the camera spin when the tab is hidden; resume when it's visible
+    const onVis = () => { if (controls) controls.autoRotate = !document.hidden; };
+    document.addEventListener("visibilitychange", onVis);
+
     // drive the controls every frame (autoRotate + damping) and tear everything
     // down when the network view is replaced, so nothing leaks across routes.
     (function tick() {
@@ -1082,8 +1116,14 @@
         cancelAnimationFrame(rafId);
         clearTimeout(buildTimer);
         clearTimeout(morphTimer);
+        clearTimeout(resumeTimer);
         window.removeEventListener("resize", onResize);
+        document.removeEventListener("visibilitychange", onVis);
+        // pauseAnimation() only stops the rAF; _destructor() releases the WebGL
+        // context (renderer/controls/composer dispose) so repeat visits don't
+        // exhaust the browser's ~16-context limit and blank the graph.
         try { Graph.pauseAnimation && Graph.pauseAnimation(); } catch (_) {}
+        try { Graph._destructor && Graph._destructor(); } catch (_) {}
         return;
       }
       if (controls && controls.update) controls.update();
