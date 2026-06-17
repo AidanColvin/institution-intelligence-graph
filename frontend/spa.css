@@ -233,7 +233,8 @@ table.data tr:hover td { background:var(--surface-2); }
 .footer-brand { font-weight:600; margin-bottom:8px; letter-spacing:-0.01em; }
 
 /* ── editable tables ─────────────────────────────────────────────── */
-.head-actions { display:flex; gap:10px; align-items:center; }
+.head-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+.export-row { display:flex; gap:10px; justify-content:flex-end; margin-bottom:14px; }
 table.data.edit { font-size:13px; }
 table.data.edit td { padding:7px 10px; }
 table.data.edit td.num { text-align:right; font-variant-numeric:tabular-nums; }

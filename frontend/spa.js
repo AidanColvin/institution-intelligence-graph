@@ -136,6 +136,77 @@
     setTimeout(() => { const first = back.querySelector("input,select,textarea"); if (first) first.focus(); }, 30);
   }
 
+  // ── downloads: Excel (.xlsx) + PDF, generated client-side from CDN libs ───────
+  // Libraries are lazy-loaded on first click (keyless, free). Exports reflect the
+  // rows currently shown (after filters/search), not the whole dataset.
+  const XLSX_CDN = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+  const JSPDF_CDN = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js";
+  const AUTOTABLE_CDN = "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js";
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      if ([...document.scripts].some((s) => s.src === src)) return resolve();
+      const s = document.createElement("script");
+      s.src = src; s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("Couldn't load export library (network blocked?)"));
+      document.head.appendChild(s);
+    });
+  }
+
+  const cellVal = (col, row) => { const v = typeof col.get === "function" ? col.get(row) : row[col.key]; return v == null ? "" : v; };
+
+  async function exportExcel(filename, columns, rows) {
+    await loadScript(XLSX_CDN);
+    const aoa = [columns.map((c) => c.label)].concat(rows.map((r) => columns.map((c) => cellVal(c, r))));
+    const ws = window.XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = columns.map((c) => ({ wch: c.w || 18 }));
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, "Data");
+    window.XLSX.writeFile(wb, filename.replace(/[^\w.-]+/g, "_") + ".xlsx");
+  }
+
+  async function exportPDF(title, columns, rows) {
+    await loadScript(JSPDF_CDN);
+    await loadScript(AUTOTABLE_CDN);
+    const doc = new window.jspdf.jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    doc.setFontSize(15); doc.text(title, 40, 40);
+    doc.setFontSize(9); doc.setTextColor(120);
+    doc.text(`${rows.length} rows · exported ${new Date().toLocaleDateString()}`, 40, 56);
+    doc.autoTable({
+      startY: 70,
+      head: [columns.map((c) => c.label)],
+      body: rows.map((r) => columns.map((c) => String(cellVal(c, r)))),
+      styles: { fontSize: 7, cellPadding: 3, overflow: "linebreak" },
+      headStyles: { fillColor: [29, 29, 31], textColor: 255 },
+      alternateRowStyles: { fillColor: [248, 248, 250] },
+      margin: { left: 40, right: 40 },
+    });
+    doc.save(title.replace(/[^\w]+/g, "_") + ".pdf");
+  }
+
+  // Two download buttons + their wiring. getData() → {title, filename, columns, rows}.
+  const exportButtons = (id) =>
+    `<button class="btn ghost" id="${id}-xls" title="Download as Excel">⤓ Excel</button>` +
+    `<button class="btn ghost" id="${id}-pdf" title="Download as PDF">⤓ PDF</button>`;
+
+  function wireExport(id, getData) {
+    const run = async (kind, btn) => {
+      const { title, filename, columns, rows } = getData();
+      if (!rows || !rows.length) { toast("Nothing to export", "err"); return; }
+      const label = btn.textContent; btn.disabled = true; btn.textContent = "Preparing…";
+      try {
+        if (kind === "excel") await exportExcel(filename, columns, rows);
+        else await exportPDF(title, columns, rows);
+        toast(kind === "excel" ? "Excel downloaded" : "PDF downloaded");
+      } catch (e) { toast(e.message || "Export failed", "err"); }
+      finally { btn.disabled = false; btn.textContent = label; }
+    };
+    const xls = document.getElementById(id + "-xls"), pdf = document.getElementById(id + "-pdf");
+    if (xls) xls.addEventListener("click", () => run("excel", xls));
+    if (pdf) pdf.addEventListener("click", () => run("pdf", pdf));
+  }
+
   let FRESHNESS = null;
   function coverageBar() {
     if (!FRESHNESS) return "";
@@ -303,7 +374,7 @@
     v.innerHTML = `<div class="page wrap">
       <div class="page-head"><div class="card-top"><div><span class="eyebrow">Master list</span><h1 class="page-title">UNC Schools &amp; Units</h1>
         <p class="page-sub">Every school, center, institute and department at UNC–Chapel Hill. Click any cell to edit — changes save live. Open a profile with ↗.</p></div>
-        <button class="btn" id="u-add">＋ Add Unit</button></div></div>
+        <div class="head-actions">${exportButtons("u-exp")}<button class="btn" id="u-add">＋ Add Unit</button></div></div></div>
       ${coverageBar()}
       <div class="toolbar">
         <input type="search" id="u-search" placeholder="Search units by name…" />
@@ -320,8 +391,25 @@
 
     const schools = units.filter((u) => u.unit_type === "School" || u.unit_type === "College")
       .map((u) => ({ id: u.unit_id, name: u.unit_name })).sort((a, b) => a.name.localeCompare(b.name));
+    const nameById = Object.fromEntries(units.map((u) => [u.unit_id, u.unit_name]));
     const types = [...new Set(units.map((u) => u.unit_type).filter(Boolean))].sort();
     $("#u-type").innerHTML = `<option value="">All types</option>` + types.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+
+    let lastRows = [];
+    const UNIT_EXPORT_COLS = [
+      { label: "Name", key: "unit_name", w: 32 },
+      { label: "Parent School", get: (u) => nameById[u.parent_unit_id] || "", w: 30 },
+      { label: "Type", key: "unit_type", w: 12 },
+      { label: "Description / Focus Areas", get: (u) => u.focus_areas || u.description || "", w: 40 },
+      { label: "Disciplines", key: "disciplines", w: 28 },
+      { label: "Faculty", key: "faculty_count", w: 9 },
+      { label: "Students", key: "student_count", w: 9 },
+      { label: "Partnerships", key: "partnership_count", w: 11 },
+      { label: "Research By", key: "research_by", w: 16 },
+      { label: "Date", key: "date_of_research", w: 12 },
+      { label: "Notes", key: "notes", w: 30 },
+      { label: "Website", key: "website_url", w: 30 },
+    ];
 
     const draw = () => {
       const term = $("#u-search").value.toLowerCase();
@@ -331,9 +419,11 @@
       rows.sort((a, b) => sort === "partnerships" ? (b.partnership_count || 0) - (a.partnership_count || 0)
         : sort === "faculty" ? (b.faculty_count || 0) - (a.faculty_count || 0)
         : (a.unit_name || "").localeCompare(b.unit_name || ""));
+      lastRows = rows;
       $("#u-count").textContent = `${rows.length} of ${units.length} units`;
       $("#u-grid").innerHTML = rows.length ? unitsTable(rows, schools) : emptyHTML("No units match", "Try a different name or type, or add a new unit.");
     };
+    wireExport("u-exp", () => ({ title: "UNC Schools & Units", filename: "UNC_Units", columns: UNIT_EXPORT_COLS, rows: lastRows }));
     $("#u-search").addEventListener("input", draw);
     $("#u-type").addEventListener("change", draw);
     $("#u-sort").addEventListener("change", draw);
@@ -440,12 +530,30 @@
     } else if (tab === "partnerships") {
       try {
         const d = await api("/unit/" + enc(id) + "/partnerships");
-        tabEl.innerHTML = d.count ? partnershipTable(d.partnerships) : emptyHTML("No partnerships recorded", "No industry partnerships for this unit in public data yet.");
+        if (!d.count) { tabEl.innerHTML = emptyHTML("No partnerships recorded", "No industry partnerships for this unit in public data yet."); }
+        else {
+          tabEl.innerHTML = `<div class="export-row">${exportButtons("up-exp")}</div>` + partnershipTable(d.partnerships);
+          const cols = [
+            { label: "Area", key: "area" }, { label: "Company", key: "company_name" }, { label: "Description", key: "description", w: 50 },
+            { label: "Status", key: "status" }, { label: "Funding", key: "funding_value" }, { label: "Funding Type", key: "funding_type" },
+            { label: "Source / Evidence", key: "source_url", w: 30 }, { label: "Verified", key: "verification_tier" },
+            { label: "Start Date", key: "start_date" }, { label: "Date", key: "date_of_research" },
+          ];
+          wireExport("up-exp", () => ({ title: `${unit.unit_name} — Partnerships`, filename: `${unit.unit_name}_Partnerships`, columns: cols, rows: d.partnerships }));
+        }
       } catch (e) { console.error("/unit partnerships failed:", e); tabEl.innerHTML = errorHTML(e); }
     } else if (tab === "faculty") {
       try {
         const d = await api("/unit/" + enc(id) + "/faculty");
-        tabEl.innerHTML = d.count ? `<div class="grid">${d.faculty.map(facultyCard).join("")}</div>` : emptyHTML("No faculty listed", "No faculty are mapped to this unit yet.");
+        if (!d.count) { tabEl.innerHTML = emptyHTML("No faculty listed", "No faculty are mapped to this unit yet."); }
+        else {
+          tabEl.innerHTML = `<div class="export-row">${exportButtons("uf-exp")}</div><div class="grid">${d.faculty.map(facultyCard).join("")}</div>`;
+          const cols = [
+            { label: "Name", key: "full_name" }, { label: "Title", key: "title" }, { label: "Partnerships", key: "partnership_count" },
+            { label: "Top Company", key: "top_company" }, { label: "Profile", key: "profile_url", w: 36 },
+          ];
+          wireExport("uf-exp", () => ({ title: `${unit.unit_name} — Faculty`, filename: `${unit.unit_name}_Faculty`, columns: cols, rows: d.faculty }));
+        }
       } catch (e) { console.error("/unit faculty failed:", e); tabEl.innerHTML = errorHTML(e); }
     }
   }
@@ -502,7 +610,7 @@
       <div class="page-head"><div class="card-top"><div><span class="eyebrow">Inventory</span>
         <h1 class="page-title">UNC Partnerships</h1>
         <p class="page-sub">Every external partnership, linked to a UNC unit. Click any cell to edit — changes save live. The unit column pulls from the same master list as Schools &amp; Units.</p></div>
-        <div class="head-actions"><button class="btn ghost" id="export-btn">⤓ Export</button><button class="btn" id="p-add">＋ Add Partnership</button></div></div></div>
+        <div class="head-actions">${exportButtons("p-exp")}<button class="btn" id="p-add">＋ Add Partnership</button></div></div></div>
       ${coverageBar()}
       <div class="toolbar">
         <input type="search" id="f-q" placeholder="Search company or unit…" />
@@ -514,8 +622,6 @@
       </div>
       <div id="p-body">${loadingHTML("Loading partnerships…")}</div>
     </div>`;
-
-    $("#export-btn").addEventListener("click", () => { window.location.href = API + "/partnerships/export"; });
 
     let rows, unitOpts;
     try {
@@ -535,16 +641,38 @@
     if (query.area) $("#f-area").value = query.area;
     if (query.tier) $("#f-tier").value = query.tier;
 
+    let lastRows = [];
+    const P_EXPORT_COLS = [
+      { label: "UNC Unit", key: "unit_name", w: 30 },
+      { label: "Area", key: "area", w: 14 },
+      { label: "Company", key: "company_name", w: 24 },
+      { label: "Description", key: "description", w: 50 },
+      { label: "Status", key: "status", w: 12 },
+      { label: "Start Date", key: "start_date", w: 12 },
+      { label: "End / Renewal", get: (r) => r.end_date || r.renewal_date || "", w: 13 },
+      { label: "Recurring", key: "recurring", w: 11 },
+      { label: "Funding", key: "funding_value", w: 12 },
+      { label: "Funding Type", key: "funding_type", w: 12 },
+      { label: "UNC POC", key: "unc_poc", w: 18 },
+      { label: "Company POC", key: "company_poc", w: 18 },
+      { label: "Source / Evidence", key: "source_url", w: 30 },
+      { label: "Verified", key: "verification_tier", w: 11 },
+      { label: "Research By", key: "research_by", w: 16 },
+      { label: "Date", key: "date_of_research", w: 12 },
+    ];
+
     const draw = () => {
       const q = ($("#f-q").value || "").toLowerCase();
       const area = $("#f-area").value, status = $("#f-status").value, tier = $("#f-tier").value;
       const filtered = rows.filter((r) =>
         (!area || r.area === area) && (!status || r.status === status) && (!tier || r.verification_tier === tier) &&
         (!q || (r.company_name || "").toLowerCase().includes(q) || (r.unit_name || "").toLowerCase().includes(q)));
+      lastRows = filtered;
       $("#p-count").textContent = `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} partnerships`;
       $("#p-body").innerHTML = filtered.length ? editPartnershipTable(filtered, unitOpts)
         : emptyHTML("No partnerships yet", rows.length ? "Loosen the filters to see more." : "Add one to get started — click ＋ Add Partnership.");
     };
+    wireExport("p-exp", () => ({ title: "UNC Partnerships", filename: "UNC_Partnerships", columns: P_EXPORT_COLS, rows: lastRows }));
     ["f-q", "f-area", "f-status", "f-tier"].forEach((id) => { const el = document.getElementById(id); el.addEventListener(id === "f-q" ? "input" : "change", draw); });
     $("#f-reset").addEventListener("click", () => { ["f-q", "f-area", "f-status", "f-tier"].forEach((id) => (document.getElementById(id).value = "")); draw(); });
 
@@ -617,8 +745,9 @@
   async function renderFaculty() {
     const v = elView();
     v.innerHTML = `<div class="page wrap">
-      <div class="page-head"><span class="eyebrow">Directory</span><h1 class="page-title">UNC Faculty</h1>
+      <div class="page-head"><div class="card-top"><div><span class="eyebrow">Directory</span><h1 class="page-title">UNC Faculty</h1>
         <p class="page-sub">Researchers mapped to units through public grants, papers and trials. Filter by name; click a unit to see its evidence.</p></div>
+        <div class="head-actions">${exportButtons("fac-exp")}</div></div></div>
       ${coverageBar()}
       <div class="toolbar">
         <input type="search" id="fac-search" placeholder="Filter by faculty name…" />
@@ -632,14 +761,27 @@
     try { fac = FACULTY_CACHE || (FACULTY_CACHE = await api("/faculty")); }
     catch (e) { console.error("/faculty failed:", e); $("#fac-grid").innerHTML = errorHTML(e); return; }
 
+    let lastRows = [];
+    const FAC_EXPORT_COLS = [
+      { label: "Name", key: "full_name", w: 28 },
+      { label: "Title", key: "title", w: 28 },
+      { label: "Unit", key: "unit_name", w: 30 },
+      { label: "Partnerships", key: "partnership_count", w: 12 },
+      { label: "Top Company", key: "top_company", w: 22 },
+      { label: "Profile", key: "profile_url", w: 36 },
+    ];
+
     const draw = () => {
       const term = $("#fac-search").value.toLowerCase();
       const partnersOnly = $("#fac-partners").checked;
       let rows = fac.filter((f) => (!term || (f.full_name || "").toLowerCase().includes(term)) && (!partnersOnly || (f.partnership_count || 0) > 0));
-      rows = rows.sort((a, b) => (b.partnership_count || 0) - (a.partnership_count || 0)).slice(0, 300);
-      $("#fac-count").textContent = `${rows.length} shown of ${fac.length.toLocaleString()}`;
-      $("#fac-grid").innerHTML = rows.length ? `<div class="grid">${rows.map(facultyCard).join("")}</div>` : emptyHTML("No faculty match", "Try a different name.");
+      rows = rows.sort((a, b) => (b.partnership_count || 0) - (a.partnership_count || 0));
+      lastRows = rows;
+      const shown = rows.slice(0, 300);
+      $("#fac-count").textContent = `${shown.length} shown of ${rows.length.toLocaleString()}${rows.length > 300 ? " (export includes all filtered)" : ""}`;
+      $("#fac-grid").innerHTML = shown.length ? `<div class="grid">${shown.map(facultyCard).join("")}</div>` : emptyHTML("No faculty match", "Try a different name.");
     };
+    wireExport("fac-exp", () => ({ title: "UNC Faculty", filename: "UNC_Faculty", columns: FAC_EXPORT_COLS, rows: lastRows }));
     $("#fac-search").addEventListener("input", draw);
     $("#fac-partners").addEventListener("change", draw);
     draw();
