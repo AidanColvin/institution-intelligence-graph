@@ -223,7 +223,7 @@ async function checkApiHealth() {
     const res = await fetch(`${API_BASE}/health`, { signal: ctrl.signal });
     clearTimeout(t);
     API_OK = res.ok;
-  } catch { API_OK = false; }
+  } catch (err) { API_OK = false; console.warn("[unc-graph] health check failed:", err); }
   renderApiStatus();
 }
 
@@ -246,7 +246,10 @@ async function fetchBackendMatch(query) {
     clearTimeout(t);
     if (!res.ok) return null;
     return await res.json();
-  } catch { return null; }
+  } catch (err) {
+    if (err && err.name !== "AbortError") console.warn("[unc-graph] backend fetch failed:", err);
+    return null;
+  }
 }
 
 // Local, in-browser matching — always available as an instant fallback.
@@ -336,7 +339,9 @@ function runSearch(query) {
         }))
         .filter(x => x.unit);
       renderResults(query, company, topical);
-    }).catch(() => { /* local result stands */ });
+    }).catch((err) => {
+      console.warn("[unc-graph] backend match failed, local result stands:", err);
+    });
   }
 }
 
