@@ -50,14 +50,22 @@ def _load_partnerships() -> dict:
         return {**empty, "meta": {"error": str(exc)}}
 
 def _partnerships():
+    # When a writable store (Vercel KV) is configured, prefer its live copy so
+    # edits made through the write API are reflected in reads across instances.
+    if _kv_enabled():
+        kv = _kv_get()
+        if kv is not None:
+            return kv
     return _load_partnerships()
 
-# ── editable write layer (keyless) ────────────────────────────────────────────
-# Live edits are persisted straight to frontend/partnerships.json — the same
-# single source of truth the GET endpoints read. No database, no API keys. On a
-# read-only host (e.g. Vercel's serverless FS) the write raises OSError and the
-# endpoint returns 503 so the UI can show a clear "edits not persisted" notice;
-# locally (dev_server) edits persist across refreshes.
+# ── editable write layer ──────────────────────────────────────────────────────
+# Edits persist to a writable store, chosen at runtime:
+#   • Vercel KV (env KV_REST_API_URL + KV_REST_API_TOKEN) — works on the deployed
+#     serverless site; or
+#   • frontend/partnerships.json on a writable filesystem (local dev).
+# Writes require the EDIT_TOKEN (when configured) and a same-origin request.
+
+MAX_WRITE_BYTES = 200_000  # reject oversized payloads
 
 _EDITABLE_UNIT_FIELDS = {"parent_unit_id", "unit_name", "unit_type", "description",
                          "focus_areas", "disciplines", "faculty_count", "student_count",
@@ -67,17 +75,98 @@ _EDITABLE_PARTNERSHIP_FIELDS = {"unit_id", "area", "company_name", "description"
                                 "funding_value", "funding_type", "unc_poc", "company_poc",
                                 "source_url", "verification_tier", "verification_notes",
                                 "research_by", "date_of_research"}
+_URL_FIELDS = {"website_url", "source_url"}
+
+
+# ── authn / request hardening ─────────────────────────────────────────────────
+
+def _edit_token() -> str:
+    return os.environ.get("EDIT_TOKEN", "")
+
+
+def _check_auth(headers: dict) -> bool:
+    """Writes are open when no EDIT_TOKEN is set (local dev); otherwise a matching
+    X-Edit-Token (or Authorization: Bearer) header is required."""
+    token = _edit_token()
+    if not token:
+        return True
+    supplied = (headers or {}).get("x-edit-token", "")
+    auth = (headers or {}).get("authorization", "")
+    if not supplied and auth.lower().startswith("bearer "):
+        supplied = auth[7:]
+    return bool(supplied) and secrets.compare_digest(supplied, token)
+
+
+def _same_origin(headers: dict) -> bool:
+    """CSRF guard: if a browser Origin is present on a write, its host must match
+    the request Host. Non-browser clients (no Origin) pass and rely on the token."""
+    h = headers or {}
+    origin = h.get("origin", "")
+    if not origin:
+        return True
+    host = h.get("host", "")
+    try:
+        return urlparse(origin).netloc == host
+    except ValueError:
+        return False
+
+
+def _safe_url(u):
+    s = (u or "").strip()
+    if s and not re.match(r"^https?://", s, re.I):
+        return ""  # drop javascript:/data:/other script-bearing schemes
+    return s
+
+
+# ── persistence (Vercel KV when configured, else local file) ──────────────────
+
+_KV_URL = os.environ.get("KV_REST_API_URL", "").rstrip("/")
+_KV_TOKEN = os.environ.get("KV_REST_API_TOKEN", "")
+_KV_KEY = "iig:inventory"
+
+
+def _kv_enabled() -> bool:
+    return bool(_KV_URL and _KV_TOKEN)
+
+
+def _kv_get():
+    import urllib.request
+    req = urllib.request.Request(f"{_KV_URL}/get/{_KV_KEY}",
+                                 headers={"Authorization": f"Bearer {_KV_TOKEN}"})
+    try:
+        with urllib.request.urlopen(req, timeout=6) as r:
+            val = json.loads(r.read()).get("result")
+        return json.loads(val) if val else None
+    except Exception:
+        return None
+
+
+def _kv_set(data: dict) -> None:
+    import urllib.request
+    body = json.dumps(data, ensure_ascii=False).encode()
+    req = urllib.request.Request(f"{_KV_URL}/set/{_KV_KEY}", data=body, method="POST",
+                                 headers={"Authorization": f"Bearer {_KV_TOKEN}",
+                                          "Content-Type": "application/octet-stream"})
+    urllib.request.urlopen(req, timeout=6).read()
 
 
 def _read_inventory() -> dict:
-    """Fresh read from disk (bypasses the GET lru_cache) for read-modify-write."""
+    """Fresh read for read-modify-write: KV if configured (seeded from the bundled
+    file the first time), else the local file."""
+    if _kv_enabled():
+        kv = _kv_get()
+        if kv is not None:
+            return kv
     with open(PARTNERSHIPS_PATH) as f:
         return json.load(f)
 
 
 def _save_inventory(data: dict) -> None:
-    with open(PARTNERSHIPS_PATH, "w") as f:
-        json.dump(data, f, ensure_ascii=False)
+    if _kv_enabled():
+        _kv_set(data)
+    else:
+        with open(PARTNERSHIPS_PATH, "w") as f:
+            json.dump(data, f, ensure_ascii=False)
     _load_partnerships.cache_clear()  # so subsequent GETs see the edit
 
 
@@ -158,10 +247,15 @@ def json_response(data, status=200):
     return status, {"Content-Type": "application/json"}, body
 
 def cors_headers():
+    # GET (public read API) stays open; writes are enforced server-side via the
+    # edit token + same-origin check, not via CORS.
     return {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Headers": "Content-Type, X-Edit-Token, Authorization",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "X-Frame-Options": "DENY",
     }
 
 # ── partnership inventory helpers ─────────────────────────────────────────────
@@ -239,12 +333,25 @@ def _build_inventory_xlsx(data: dict) -> bytes:
 
 # ── route handler ─────────────────────────────────────────────────────────────
 
-def handle_write(method: str, path: str, body: bytes) -> tuple[int, dict, bytes]:
+def handle_write(method: str, path: str, body: bytes, headers: dict) -> tuple[int, dict, bytes]:
     """POST/PUT/DELETE for the editable units & partnerships inventory."""
+    if not _same_origin(headers):
+        return _cors_json({"error": "bad_origin", "message": "Cross-origin writes are not allowed."}, 403)
+    if not _check_auth(headers):
+        return _cors_json({"error": "unauthorized", "message": "A valid edit token is required to make changes."}, 401)
+    if len(body) > MAX_WRITE_BYTES:
+        return _cors_json({"error": "payload_too_large", "message": "Request body too large."}, 413)
+
     try:
         payload = json.loads(body or b"{}")
     except (json.JSONDecodeError, ValueError):
         return _cors_json({"error": "invalid JSON body"}, 400)
+    if not isinstance(payload, dict):
+        return _cors_json({"error": "JSON body must be an object"}, 400)
+    # sanitize URL-bearing fields up front
+    for f in _URL_FIELDS:
+        if f in payload:
+            payload[f] = _safe_url(payload[f])
 
     try:
         data = _read_inventory()
@@ -259,9 +366,11 @@ def handle_write(method: str, path: str, body: bytes) -> tuple[int, dict, bytes]
         try:
             _save_inventory(data)
         except OSError:
-            # Read-only filesystem (e.g. serverless) — surface clearly, don't 500.
+            # Read-only filesystem (no KV configured) — surface clearly, don't 500.
             return _cors_json({"error": "read_only",
-                               "message": "This deployment is read-only; edits aren't persisted. Run locally to edit."}, 503)
+                               "message": "This deployment is read-only; configure Vercel KV (or run locally) to persist edits."}, 503)
+        except Exception as exc:  # KV/network failure
+            return _cors_json({"error": "persist_failed", "message": f"Edit could not be saved: {exc}"}, 502)
         return _cors_json(result, status)
 
     # ── units ────────────────────────────────────────────────────────────────
@@ -340,14 +449,14 @@ def handle_write(method: str, path: str, body: bytes) -> tuple[int, dict, bytes]
     return _cors_json({"error": "Not found", "path": path, "method": method}, 404)
 
 
-def handle(method: str, path: str, qs: dict, body: bytes = b"") -> tuple[int, dict, bytes]:
+def handle(method: str, path: str, qs: dict, body: bytes = b"", headers: dict | None = None) -> tuple[int, dict, bytes]:
     graph = _graph()
 
     if method == "OPTIONS":
         return 204, cors_headers(), b""
 
     if method in ("POST", "PUT", "DELETE"):
-        return handle_write(method, path, body)
+        return handle_write(method, path, body, headers or {})
 
     # /health
     if path in ("/health", "/api/health"):
@@ -513,7 +622,8 @@ class handler(BaseHTTPRequestHandler):
         qs = parse_qs(parsed.query)
         length = int(self.headers.get("Content-Length") or 0)
         req_body = self.rfile.read(length) if length else b""
-        status, headers, body = handle(method, parsed.path, qs, req_body)
+        req_headers = {k.lower(): v for k, v in self.headers.items()}
+        status, headers, body = handle(method, parsed.path, qs, req_body, req_headers)
         self.send_response(status)
         for k, v in headers.items():
             self.send_header(k, v)

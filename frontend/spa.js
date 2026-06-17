@@ -63,14 +63,27 @@
   const enc = encodeURIComponent;
 
   // ── write helpers: edit/add/delete against the keyless write API ─────────────
-  async function apiWrite(method, path, bodyObj) {
+  // Edit token: only required when the server has EDIT_TOKEN configured. We
+  // prompt lazily on the first 401 and remember it in localStorage.
+  function promptEditToken() {
+    const t = (window.prompt("Enter the edit access token to make changes:") || "").trim();
+    if (t) localStorage.setItem("iig_edit_token", t);
+    return t;
+  }
+
+  async function apiWrite(method, path, bodyObj, _retried) {
+    const token = localStorage.getItem("iig_edit_token") || "";
     const res = await fetch(API + path, {
       method,
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: { "Content-Type": "application/json", Accept: "application/json", ...(token ? { "X-Edit-Token": token } : {}) },
       body: bodyObj ? JSON.stringify(bodyObj) : undefined,
     });
     let data = null;
     try { data = await res.json(); } catch {}
+    if (res.status === 401 && !_retried) {
+      localStorage.removeItem("iig_edit_token");
+      if (promptEditToken()) return apiWrite(method, path, bodyObj, true);
+    }
     if (!res.ok) {
       const err = new Error((data && (data.message || data.error)) || ("HTTP " + res.status));
       err.status = res.status; err.data = data;
@@ -142,16 +155,33 @@
   const XLSX_CDN = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
   const JSPDF_CDN = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js";
   const AUTOTABLE_CDN = "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js";
+  // Subresource Integrity — pin each CDN script to a known hash so a tampered
+  // CDN response is rejected by the browser.
+  const SRI = {
+    [XLSX_CDN]: "sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw",
+    [JSPDF_CDN]: "sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk",
+    [AUTOTABLE_CDN]: "sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3",
+  };
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       if ([...document.scripts].some((s) => s.src === src)) return resolve();
       const s = document.createElement("script");
       s.src = src; s.async = true;
+      if (SRI[src]) { s.integrity = SRI[src]; s.crossOrigin = "anonymous"; s.referrerPolicy = "no-referrer"; }
       s.onload = () => resolve();
       s.onerror = () => reject(new Error("Couldn't load export library (network blocked?)"));
       document.head.appendChild(s);
     });
+  }
+
+  // Only allow http(s) (and in-app hash) links to be rendered as clickable —
+  // blocks javascript:/data: and other script-bearing URI schemes.
+  function safeUrl(u) {
+    if (!u) return "";
+    const s = String(u).trim();
+    if (/^https?:\/\//i.test(s) || s.startsWith("#") || s.startsWith("/")) return s;
+    return "";
   }
 
   const cellVal = (col, row) => { const v = typeof col.get === "function" ? col.get(row) : row[col.key]; return v == null ? "" : v; };
@@ -307,7 +337,7 @@
         const samples = (u.samples || []).slice(0, 5).map((s) => `
           <div class="ev-sample">
             <span class="ev-type">${esc(EDGE_LABEL[s.type] || s.type)}</span>
-            <span style="flex:1">${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a>` : esc(s.title || "")}</span>
+            <span style="flex:1">${safeUrl(s.url) ? `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a>` : esc(s.title || "")}</span>
             <span class="ev-date">${esc(fmtDate(s.date))}</span>
           </div>`).join("");
         return `<div class="ev-unit">
@@ -537,7 +567,7 @@
       const rows = [
         ["Faculty", unit.faculty_count],
         ["Partnerships", unit.partnership_count],
-        ["Website", unit.website_url ? `<a href="${esc(unit.website_url)}" target="_blank" rel="noopener">${esc(unit.website_url)}</a>` : ""],
+        ["Website", safeUrl(unit.website_url) ? `<a href="${esc(safeUrl(unit.website_url))}" target="_blank" rel="noopener">${esc(unit.website_url)}</a>` : ""],
         ["Disciplines", Array.isArray(unit.disciplines) ? unit.disciplines.join(", ") : unit.disciplines],
         ["Researched by", unit.research_by],
         ["As of", fmtDate(unit.date_of_research)],
@@ -585,7 +615,7 @@
         <td>${esc(r.company_name || "")}</td>
         <td><span class="badge ${esc(r.verification_tier || "")}">${esc(r.verification_tier || "")}</span></td>
         <td>${esc(fmtUSD(r.funding_value))}</td>
-        <td class="src-link">${r.source_url ? `<a href="${esc(r.source_url)}" target="_blank" rel="noopener">record ↗</a>` : ""}</td>
+        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener">record ↗</a>` : ""}</td>
         <td>${esc(fmtDate(r.start_date || r.date_of_research))}</td>
       </tr>`).join("")}</tbody></table></div>`;
   }
@@ -613,7 +643,7 @@
         <td>${sel(id, "funding_type", FUNDING_TYPE_OPTS, r.funding_type)}</td>
         ${editCell(id, "unc_poc", r.unc_poc)}
         ${editCell(id, "company_poc", r.company_poc)}
-        <td class="src-link">${r.source_url ? `<a href="${esc(r.source_url)}" target="_blank" rel="noopener">link ↗</a>` : `<span class="ec" contenteditable="true" data-id="${esc(id)}" data-field="source_url" data-orig="">add…</span>`}</td>
+        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener">link ↗</a>` : `<span class="ec" contenteditable="true" data-id="${esc(id)}" data-field="source_url" data-orig="${esc(r.source_url || "")}">${r.source_url ? esc(r.source_url) : "add…"}</span>`}</td>
         <td>${sel(id, "verification_tier", TIER_OPTS, r.verification_tier)}</td>
         ${editCell(id, "research_by", r.research_by)}
         ${editCell(id, "date_of_research", r.date_of_research, "nowrap")}
@@ -755,7 +785,7 @@
       <div class="card-top"><h3>${esc(f.full_name)}</h3>${f.partnership_count ? `<span class="kind">${f.partnership_count} partnership${f.partnership_count === 1 ? "" : "s"}</span>` : ""}</div>
       <div class="meta">${esc(f.title || "")}${f.unit_name ? `${f.title ? " · " : ""}<a href="#/unit/${enc(f.unit_id)}">${esc(f.unit_name)}</a>` : ""}</div>
       ${f.top_company ? `<div class="chips"><span class="chip">${esc(f.top_company)}</span></div>` : ""}
-      ${f.profile_url ? `<div style="margin-top:10px"><a class="src-link" href="${esc(f.profile_url)}" target="_blank" rel="noopener">profile ↗</a></div>` : ""}
+      ${safeUrl(f.profile_url) ? `<div style="margin-top:10px"><a class="src-link" href="${esc(safeUrl(f.profile_url))}" target="_blank" rel="noopener">profile ↗</a></div>` : ""}
     </div>`;
   }
   let FACULTY_CACHE = null;

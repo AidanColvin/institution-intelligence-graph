@@ -58,7 +58,8 @@ class DevHandler(SimpleHTTPRequestHandler):
         qs = parse_qs(parsed.query)
         length = int(self.headers.get("Content-Length") or 0)
         req_body = self.rfile.read(length) if length else b""
-        status, headers, body = handle(method, parsed.path, qs, req_body)
+        req_headers = {k.lower(): v for k, v in self.headers.items()}
+        status, headers, body = handle(method, parsed.path, qs, req_body, req_headers)
         self.send_response(status)
         for key, value in headers.items():
             self.send_header(key, value)
