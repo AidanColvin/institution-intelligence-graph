@@ -166,8 +166,8 @@ function buildNetwork3D() {
 
   // Spread the layout out so every connection is legible (not crushed into a ball).
   try {
-    NETGRAPH.d3Force("charge").strength(-85);
-    NETGRAPH.d3Force("link").distance(l => l.kind === "org" ? 50 : l.kind === "faculty" ? 16 : 34);
+    NETGRAPH.d3Force("charge").strength(-130);
+    NETGRAPH.d3Force("link").distance(l => l.kind === "org" ? 58 : l.kind === "faculty" ? 15 : 46);
   } catch {}
 
   NETGRAPH.cameraPosition({ z: 440 });
