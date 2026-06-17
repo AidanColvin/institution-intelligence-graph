@@ -4,214 +4,46 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>UNC Research Intelligence</title>
-  <meta name="description" content="Explore UNC–Chapel Hill's public research footprint — companies, labs, faculty, and funding linked by concrete public records." />
+  <meta name="description" content="Explore UNC–Chapel Hill's public research footprint — companies, schools, faculty, partnerships and funding, each link backed by a real public record. Live, full-stack." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="spa.css" />
 </head>
 <body>
-
-  <!-- Nav -->
-  <nav class="nav" id="nav">
+  <nav class="nav">
     <div class="nav-inner wrap">
-      <div class="nav-brand">
+      <a class="nav-brand" href="#/">
         <div class="nav-logo">UNC</div>
         <span class="nav-title">Research Intelligence</span>
-        <span id="api-status" class="api-status local" title="Checking backend…"><span class="api-dot"></span>Connecting…</span>
+      </a>
+      <div class="nav-links" id="nav-links">
+        <a class="nav-link" href="#/" data-route="">Search</a>
+        <a class="nav-link" href="#/units" data-route="units">Schools &amp; Units</a>
+        <a class="nav-link" href="#/partnerships" data-route="partnerships">Partnerships</a>
+        <a class="nav-link" href="#/faculty" data-route="faculty">Faculty</a>
+        <a class="nav-link" href="#/network" data-route="network">Network</a>
+        <a class="nav-link" href="#/about" data-route="about">About</a>
       </div>
-      <div class="nav-pills" id="nav-stats"></div>
+      <span id="api-status" class="api-status" title="Checking backend…"><span class="api-dot"></span>Connecting…</span>
     </div>
   </nav>
 
-  <!-- Hero -->
-  <header class="hero">
-    <div class="wrap hero-inner">
-      <div class="hero-eyebrow">UNC–Chapel Hill · Public Research Footprint</div>
-      <h1 class="hero-h1">See how the world<br/>connects to UNC research</h1>
-      <p class="hero-sub">Type a <b>company</b> or a <b>research topic</b> — get the UNC schools, labs, and faculty behind it, each link backed by a real public record you can open.</p>
+  <main id="view"></main>
 
-      <div class="search-wrap">
-        <div class="search-box" id="search-box">
-          <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Try a company like “Pfizer” or a topic like “gene therapy”…" />
-          <button class="search-clear" id="search-clear" aria-label="Clear" hidden>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-
-        <!-- Two-mode legend: teaches the two searches at a glance -->
-        <div class="mode-legend" aria-hidden="true">
-          <span class="mode-legend-item"><span class="mode-glyph evidence"></span>Search a <b>company</b> → see its UNC footprint</span>
-          <span class="mode-legend-dot">·</span>
-          <span class="mode-legend-item"><span class="mode-glyph topical"></span>Search a <b>topic</b> → find the matching UNC units</span>
-        </div>
-      </div>
-
-      <!-- Example-led onboarding: real searches, learn by doing -->
-      <div class="starters" aria-label="Example searches">
-        <p class="starters-lead">New here? Tap an example to see a live result —</p>
-        <div class="starter-grid">
-          <button class="starter-card pill" data-q="Pfizer">
-            <span class="starter-tag evidence">Company</span>
-            <span class="starter-title">See Pfizer’s UNC footprint</span>
-            <span class="starter-desc">Which schools &amp; labs link to Pfizer — by grants, papers &amp; trials.</span>
-            <span class="starter-go">Run this search<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
-          </button>
-
-          <button class="starter-card pill" data-q="gene therapy">
-            <span class="starter-tag topical">Topic</span>
-            <span class="starter-title">Find labs for gene therapy</span>
-            <span class="starter-desc">UNC units whose grant &amp; paper keywords match this field.</span>
-            <span class="starter-go">Run this search<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
-          </button>
-
-          <button class="starter-card pill" data-q="Gilead Sciences">
-            <span class="starter-tag evidence">Company</span>
-            <span class="starter-title">Trace Gilead Sciences</span>
-            <span class="starter-desc">Confirmed links via trial sponsors &amp; SEC-matched records.</span>
-            <span class="starter-go">Run this search<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
-          </button>
-
-          <button class="starter-card pill" data-q="cancer immunotherapy">
-            <span class="starter-tag topical">Topic</span>
-            <span class="starter-title">Map cancer immunotherapy</span>
-            <span class="starter-desc">See which UNC units are most active in this research area.</span>
-            <span class="starter-go">Run this search<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
-          </button>
-        </div>
-
-        <!-- Trust strip: every answer is a real public record -->
-        <div class="trust-strip">
-          <svg class="trust-shield" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.3-3 7.6-7 9-4-1.4-7-4.7-7-9V6l7-3z"/><polyline points="9 12 11.2 14.2 15.5 9.8"/></svg>
-          <span>Every link is a real public record — <b>NIH</b>, <b>NSF</b>, <b>USAspending</b>, <b>ClinicalTrials.gov</b>, <b>Crossref</b> &amp; <b>SEC</b> — with a source link, a date, and a <span class="trust-tier confirmed">confirmed</span>/<span class="trust-tier probable">probable</span> tier. 100% free &amp; public.</span>
-        </div>
-      </div>
-    </div>
-  </header>
-
-  <!-- Results -->
-  <section id="results" class="results-section wrap" hidden>
-    <div id="evidence-panel" hidden></div>
-    <div id="topical-panel" hidden></div>
-    <div id="no-results" class="no-results" hidden>
-      <div class="no-results-icon">
-        <svg viewBox="0 0 48 48" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="22" cy="22" r="16"/><line x1="34" y1="34" x2="44" y2="44"/><line x1="17" y1="22" x2="27" y2="22" stroke-linecap="round"/></svg>
-      </div>
-      <h3>Let’s try a different angle</h3>
-      <p id="no-results-msg">No match yet. Search a <b>company</b> (like “Pfizer” or “Gilead”) to see its UNC footprint, or a <b>research topic</b> (like “gene therapy” or “HIV”) to find the units working on it.</p>
-    </div>
-  </section>
-
-  <!-- 3D research network -->
-  <section class="section network-section">
-    <div class="wrap">
-      <div class="section-head">
-        <h2 class="section-title">Research network</h2>
-        <p class="section-sub">Every dot is a UNC unit or a partner company; every line is a public record connecting them. Drag to rotate, scroll to zoom, click a dot to explore.</p>
-      </div>
-    </div>
-    <div class="network-stage">
-      <div id="graph-3d"></div>
-      <div class="network-legend">
-        <span><i class="root"></i> UNC–Chapel Hill</span>
-        <span><i class="unit"></i> School / lab</span>
-        <span><i class="person"></i> Faculty</span>
-        <span><i class="conf"></i> Company · confirmed</span>
-        <span><i class="prob"></i> Company · probable</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- Units grid -->
-  <section class="section wrap">
-    <div class="section-head">
-      <div>
-        <h2 class="section-title">UNC Schools &amp; Units</h2>
-        <p class="section-sub" id="unit-count">Loading…</p>
-      </div>
-    </div>
-    <div id="unit-grid" class="unit-grid"></div>
-  </section>
-
-  <!-- Companies -->
-  <section class="section section-alt">
-    <div class="wrap">
-      <div class="section-head">
-        <div>
-          <h2 class="section-title">Partner Companies</h2>
-          <p class="section-sub">Companies linked to UNC by a concrete public record. Click to explore the evidence.</p>
-        </div>
-      </div>
-      <div id="company-chips" class="company-chips"></div>
-    </div>
-  </section>
-
-  <!-- Unit modal -->
-  <div id="unit-modal" class="modal-overlay" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true">
-      <div class="modal-header">
-        <button class="modal-back" id="modal-close" aria-label="Close">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-          Back
-        </button>
-      </div>
-      <div id="modal-body" class="modal-body"></div>
-    </div>
-  </div>
-
-  <!-- UNC Partnership Map -->
-  <section class="section wrap pmap-section" id="partnership-map">
-    <div class="section-head">
-      <div>
-        <h2 class="section-title">UNC Partnership Map</h2>
-        <p class="section-sub" id="pmap-sub">Every UNC school, department, lab, center &amp; faculty member — and the industry partnerships in public data. Click a card to see its evidence.</p>
-      </div>
-      <button class="pmap-export" id="pmap-export" title="Download UNC_Partnership_Inventory.xlsx">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export to Excel
-      </button>
-    </div>
-
-    <div class="pmap-tabs" id="pmap-tabs">
-      <button class="pmap-tab active" data-view="schools">Schools &amp; Departments</button>
-      <button class="pmap-tab" data-view="labs">Labs &amp; Centers</button>
-      <button class="pmap-tab" data-view="faculty">Faculty</button>
-    </div>
-
-    <div class="pmap-grid" id="pmap-grid"></div>
-
-    <div class="pmap-table-wrap">
-      <div class="pmap-filters">
-        <span class="pmap-selected" id="pmap-selected">All partnerships</span>
-        <select id="pmap-f-area" aria-label="Filter by area"><option value="">All areas</option></select>
-        <select id="pmap-f-status" aria-label="Filter by status"><option value="">All statuses</option></select>
-        <select id="pmap-f-tier" aria-label="Filter by verification tier"><option value="">All tiers</option></select>
-        <button class="pmap-clear" id="pmap-clear">Reset</button>
-      </div>
-      <table class="pmap-table" id="pmap-table">
-        <thead>
-          <tr><th>Area</th><th>Company</th><th>Status</th><th>Verified</th><th>Source</th><th>Date</th></tr>
-        </thead>
-        <tbody id="pmap-tbody"></tbody>
-      </table>
-      <div class="pmap-tablecount" id="pmap-tablecount"></div>
-    </div>
-  </section>
-
-  <!-- Footer -->
   <footer class="footer">
     <div class="wrap footer-inner">
-      <div class="footer-col">
+      <div>
         <div class="footer-brand">UNC Research Intelligence</div>
-        <p class="footer-desc">A precomputed graph of UNC–Chapel Hill's public research footprint. Built for intelligence mapping — not outreach.</p>
-        <p class="footer-built">Graph built: <span id="built-at">—</span></p>
+        <p>A live, full-stack view of UNC–Chapel Hill's public research footprint. Every page reads from the same-origin API. Built for intelligence mapping — not outreach.</p>
+        <p style="margin-top:8px">Graph built: <span id="footer-built">—</span></p>
       </div>
-      <div class="footer-col">
+      <div>
         <h4>Data sources</h4>
         <p>NIH RePORTER · NSF Awards · USAspending · ClinicalTrials.gov · Crossref · SEC EDGAR · ROR</p>
         <p style="margin-top:8px">100% free, public, keyless. Anchor: ROR <a href="https://ror.org/0130frc33" target="_blank" rel="noopener">0130frc33</a>.</p>
       </div>
-      <div class="footer-col">
+      <div>
         <h4>Confidence tiers</h4>
         <p><span class="badge confirmed">confirmed</span> — a structured identifier matched (SEC CIK, ORCID, trial sponsor).</p>
         <p style="margin-top:8px"><span class="badge probable">probable</span> — normalized-name match only.</p>
@@ -220,7 +52,6 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/3d-force-graph/dist/3d-force-graph.min.js"></script>
-  <script src="app.js"></script>
-  <script src="unc_units.js"></script>
+  <script src="spa.js"></script>
 </body>
 </html>
