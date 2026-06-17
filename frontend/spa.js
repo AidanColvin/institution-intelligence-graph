@@ -62,6 +62,80 @@
   function emptyHTML(title, msg) { return `<div class="empty"><h3>${esc(title)}</h3><p>${esc(msg)}</p></div>`; }
   const enc = encodeURIComponent;
 
+  // ── write helpers: edit/add/delete against the keyless write API ─────────────
+  async function apiWrite(method, path, bodyObj) {
+    const res = await fetch(API + path, {
+      method,
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: bodyObj ? JSON.stringify(bodyObj) : undefined,
+    });
+    let data = null;
+    try { data = await res.json(); } catch {}
+    if (!res.ok) {
+      const err = new Error((data && (data.message || data.error)) || ("HTTP " + res.status));
+      err.status = res.status; err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  let _toastTimer = null;
+  function toast(msg, kind = "ok") {
+    let el = document.getElementById("toast");
+    if (!el) { el = document.createElement("div"); el.id = "toast"; document.body.appendChild(el); }
+    el.className = "toast " + kind + " show";
+    el.textContent = msg;
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => { el.className = "toast " + kind; }, 2600);
+  }
+
+  // picklists (prompt-specified, plus any values already present in the data)
+  const AREA_OPTS = ["Events", "Scholarships", "Talent Pipeline", "Programs", "Research Grant", "Clinical Trial"];
+  const STATUS_OPTS = ["Active", "Past", "In Discussion", "Lapsed"];
+  const RECURRING_OPTS = ["", "one-time", "annual", "ongoing"];
+  const FUNDING_TYPE_OPTS = ["", "grant", "gift", "sponsorship", "in-kind", "none"];
+  const TIER_OPTS = ["Verified", "Reported", "Inferred"];
+  const UNIT_TYPE_OPTS = ["School", "College", "Department", "Center", "Institute", "Lab", "Program"];
+
+  const optionsHTML = (opts, val) => {
+    const list = opts.slice();
+    if (val != null && val !== "" && !list.includes(val)) list.unshift(val); // keep current value selectable
+    return list.map((o) => `<option value="${esc(o)}" ${o === (val ?? "") ? "selected" : ""}>${esc(o === "" ? "—" : o)}</option>`).join("");
+  };
+
+  function fieldHTML(f) {
+    if (f.type === "select") return `<label class="fld"><span>${esc(f.label)}</span><select name="${f.key}">${optionsHTML(f.options || [], f.value)}</select></label>`;
+    if (f.type === "textarea") return `<label class="fld wide"><span>${esc(f.label)}</span><textarea name="${f.key}" rows="2" placeholder="${esc(f.placeholder || "")}">${esc(f.value || "")}</textarea></label>`;
+    return `<label class="fld"><span>${esc(f.label)}</span><input name="${f.key}" type="${f.type || "text"}" value="${esc(f.value ?? "")}" placeholder="${esc(f.placeholder || "")}" /></label>`;
+  }
+
+  // Modal form. fields: [{key,label,type,options,value,placeholder}]. onSubmit(values)→Promise.
+  function openModal(title, fields, onSubmit) {
+    const back = document.createElement("div");
+    back.className = "modal-back";
+    back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+      <div class="modal-head"><h3>${esc(title)}</h3><button class="modal-x" aria-label="Close">×</button></div>
+      <form class="modal-form">${fields.map(fieldHTML).join("")}
+        <div class="modal-actions"><button type="button" class="btn ghost" data-cancel>Cancel</button><button type="submit" class="btn">Save</button></div>
+      </form></div>`;
+    document.body.appendChild(back);
+    const close = () => back.remove();
+    back.querySelector(".modal-x").onclick = close;
+    back.querySelector("[data-cancel]").onclick = close;
+    back.addEventListener("click", (e) => { if (e.target === back) close(); });
+    document.addEventListener("keydown", function esckey(e) { if (e.key === "Escape") { close(); document.removeEventListener("keydown", esckey); } });
+    back.querySelector(".modal-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const out = {};
+      fields.forEach((f) => { const el = back.querySelector(`[name="${f.key}"]`); let val = el ? el.value : ""; if (f.type === "number") val = val === "" ? null : Number(val); out[f.key] = val; });
+      const btn = back.querySelector('button[type="submit"]');
+      btn.disabled = true; btn.textContent = "Saving…";
+      try { await onSubmit(out); close(); }
+      catch (err) { toast(err.message || "Save failed", "err"); btn.disabled = false; btn.textContent = "Save"; }
+    });
+    setTimeout(() => { const first = back.querySelector("input,select,textarea"); if (first) first.focus(); }, 30);
+  }
+
   let FRESHNESS = null;
   function coverageBar() {
     if (!FRESHNESS) return "";
@@ -193,17 +267,48 @@
     out.innerHTML = html;
   }
 
-  // ── view: UNITS EXPLORER ─────────────────────────────────────────────────────
+  // ── view: UNITS MASTER LIST (editable) ───────────────────────────────────────
   let UNITS_CACHE = null;
+
+  // editable cell: contenteditable text that PUTs on blur when changed
+  const editCell = (id, field, val, cls) =>
+    `<td class="ec ${cls || ""}" contenteditable="true" data-id="${esc(id)}" data-field="${field}" data-orig="${esc(val ?? "")}">${esc(val ?? "")}</td>`;
+
+  function unitsTable(rows, schools) {
+    const schoolOpts = [{ id: "unc:root", name: "University of North Carolina at Chapel Hill" }, ...schools];
+    const parentSel = (id, val) => `<select class="es" data-id="${esc(id)}" data-field="parent_unit_id">${schoolOpts.map((s) => `<option value="${esc(s.id)}" ${s.id === val ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>`;
+    const typeSel = (id, val) => `<select class="es" data-id="${esc(id)}" data-field="unit_type">${optionsHTML(UNIT_TYPE_OPTS, val)}</select>`;
+    return `<div class="table-wrap"><table class="data edit">
+      <thead><tr>
+        <th>Name</th><th>Parent School</th><th>Type</th><th>Description / Focus Areas</th>
+        <th>Disciplines</th><th>Faculty</th><th>Students</th><th>Research By</th><th>Date</th><th>Notes</th><th></th>
+      </tr></thead>
+      <tbody>${rows.map((u) => `<tr data-id="${esc(u.unit_id)}">
+        ${editCell(u.unit_id, "unit_name", u.unit_name, "strong")}
+        <td>${parentSel(u.unit_id, u.parent_unit_id || "unc:root")}</td>
+        <td>${typeSel(u.unit_id, u.unit_type)}</td>
+        ${editCell(u.unit_id, "focus_areas", u.focus_areas || u.description)}
+        ${editCell(u.unit_id, "disciplines", u.disciplines)}
+        ${editCell(u.unit_id, "faculty_count", u.faculty_count, "num")}
+        ${editCell(u.unit_id, "student_count", u.student_count, "num")}
+        ${editCell(u.unit_id, "research_by", u.research_by)}
+        ${editCell(u.unit_id, "date_of_research", u.date_of_research, "nowrap")}
+        ${editCell(u.unit_id, "notes", u.notes)}
+        <td class="rowtools"><a class="mini" href="#/unit/${enc(u.unit_id)}" title="Open profile">↗</a><button class="mini del" data-del-unit="${esc(u.unit_id)}" title="Delete">×</button></td>
+      </tr>`).join("")}</tbody></table></div>`;
+  }
+
   async function renderUnits() {
     const v = elView();
     v.innerHTML = `<div class="page wrap">
-      <div class="page-head"><span class="eyebrow">Explorer</span><h1 class="page-title">UNC Schools &amp; Units</h1>
-        <p class="page-sub">Every school, department, lab and center in the graph — with its industry partnership count. Click through for evidence.</p></div>
+      <div class="page-head"><div class="card-top"><div><span class="eyebrow">Master list</span><h1 class="page-title">UNC Schools &amp; Units</h1>
+        <p class="page-sub">Every school, center, institute and department at UNC–Chapel Hill. Click any cell to edit — changes save live. Open a profile with ↗.</p></div>
+        <button class="btn" id="u-add">＋ Add Unit</button></div></div>
       ${coverageBar()}
       <div class="toolbar">
-        <input type="search" id="u-search" placeholder="Filter units by name…" />
+        <input type="search" id="u-search" placeholder="Search units by name…" />
         <select id="u-type"><option value="">All types</option></select>
+        <select id="u-sort"><option value="name">Sort: Name</option><option value="partnerships">Sort: Partnerships</option><option value="faculty">Sort: Faculty size</option></select>
         <span class="count" id="u-count"></span>
       </div>
       <div id="u-grid">${loadingHTML("Loading units…")}</div>
@@ -213,25 +318,85 @@
     try { units = UNITS_CACHE || (UNITS_CACHE = await api("/units")); }
     catch (e) { console.error("/units failed:", e); $("#u-grid").innerHTML = errorHTML(e); return; }
 
+    const schools = units.filter((u) => u.unit_type === "School" || u.unit_type === "College")
+      .map((u) => ({ id: u.unit_id, name: u.unit_name })).sort((a, b) => a.name.localeCompare(b.name));
     const types = [...new Set(units.map((u) => u.unit_type).filter(Boolean))].sort();
     $("#u-type").innerHTML = `<option value="">All types</option>` + types.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
 
     const draw = () => {
       const term = $("#u-search").value.toLowerCase();
       const type = $("#u-type").value;
-      const rows = units.filter((u) => (!type || u.unit_type === type) && (!term || (u.unit_name || "").toLowerCase().includes(term)))
-        .sort((a, b) => (b.partnership_count || 0) - (a.partnership_count || 0));
+      const sort = $("#u-sort").value;
+      const rows = units.filter((u) => u.unit_id !== "unc:root" && (!type || u.unit_type === type) && (!term || (u.unit_name || "").toLowerCase().includes(term)));
+      rows.sort((a, b) => sort === "partnerships" ? (b.partnership_count || 0) - (a.partnership_count || 0)
+        : sort === "faculty" ? (b.faculty_count || 0) - (a.faculty_count || 0)
+        : (a.unit_name || "").localeCompare(b.unit_name || ""));
       $("#u-count").textContent = `${rows.length} of ${units.length} units`;
-      $("#u-grid").innerHTML = rows.length ? `<div class="grid">` + rows.map((u) => `
-        <a class="card" href="#/unit/${enc(u.unit_id)}">
-          <div class="card-top"><h3>${esc(u.unit_name)}</h3><span class="kind">${esc(u.unit_type || "unit")}</span></div>
-          <div class="meta">${(u.partnership_count || 0)} partnership${u.partnership_count === 1 ? "" : "s"}${u.faculty_count ? ` · ${u.faculty_count} faculty` : ""}</div>
-          ${(u.top_companies && u.top_companies.length) ? `<div class="chips">${u.top_companies.slice(0, 3).map((c) => `<span class="chip">${esc(typeof c === "string" ? c : c.name || "")}</span>`).join("")}</div>` : ""}
-        </a>`).join("") + `</div>` : emptyHTML("No units match", "Try a different name or type.");
+      $("#u-grid").innerHTML = rows.length ? unitsTable(rows, schools) : emptyHTML("No units match", "Try a different name or type, or add a new unit.");
     };
     $("#u-search").addEventListener("input", draw);
     $("#u-type").addEventListener("change", draw);
+    $("#u-sort").addEventListener("change", draw);
+
+    // inline edit: text cells (blur) + selects (change)
+    $("#u-grid").addEventListener("focusout", async (e) => {
+      const td = e.target.closest("td.ec"); if (!td) return;
+      const val = td.textContent.trim();
+      if (val === (td.dataset.orig || "")) return;
+      const u = units.find((x) => x.unit_id === td.dataset.id);
+      await saveField("/api/units/", td.dataset.id, td.dataset.field, val, u);
+      td.dataset.orig = val;
+    });
+    $("#u-grid").addEventListener("change", async (e) => {
+      const sel = e.target.closest("select.es"); if (!sel) return;
+      const u = units.find((x) => x.unit_id === sel.dataset.id);
+      await saveField("/api/units/", sel.dataset.id, sel.dataset.field, sel.value, u);
+    });
+    $("#u-grid").addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-del-unit]"); if (!btn) return;
+      const id = btn.dataset.delUnit;
+      const u = units.find((x) => x.unit_id === id);
+      if (!confirm(`Delete “${u ? u.unit_name : id}”? This can't be undone.`)) return;
+      try { await apiWrite("DELETE", "/api/units/" + enc(id)); toast("Unit deleted"); UNITS_CACHE = null; units = await api("/units"); draw(); }
+      catch (err) { toast(err.message || "Delete failed", "err"); }
+    });
+
+    $("#u-add").addEventListener("click", () => {
+      openModal("Add Unit", [
+        { key: "unit_name", label: "Name", placeholder: "e.g. Department of Statistics" },
+        { key: "unit_type", label: "Type", type: "select", options: UNIT_TYPE_OPTS, value: "Department" },
+        { key: "parent_unit_id", label: "Parent school", type: "select", options: schools.map((s) => s.id), value: schools[0] && schools[0].id },
+        { key: "focus_areas", label: "Focus areas", type: "textarea" },
+        { key: "disciplines", label: "Disciplines", type: "textarea" },
+        { key: "faculty_count", label: "Faculty", type: "number" },
+        { key: "student_count", label: "Students", type: "number" },
+        { key: "website_url", label: "Website", placeholder: "https://" },
+        { key: "research_by", label: "Research by" },
+        { key: "date_of_research", label: "Date of research", type: "date" },
+        { key: "notes", label: "Notes", type: "textarea" },
+      ], async (vals) => {
+        const created = await apiWrite("POST", "/api/units", vals);
+        toast("Unit added");
+        UNITS_CACHE = null; units = await api("/units"); draw();
+        return created;
+      });
+    });
+
     draw();
+  }
+
+  // shared inline-save: PUT one field, update local row, toast
+  async function saveField(base, id, field, raw, localRow) {
+    let value = raw;
+    if (field === "faculty_count" || field === "student_count" || field === "funding_value")
+      value = raw === "" ? null : Number(raw);
+    try {
+      await apiWrite("PUT", base + enc(id), { [field]: value });
+      if (localRow) localRow[field] = value;
+      toast("Saved");
+    } catch (e) {
+      toast(e.message || "Save failed", "err");
+    }
   }
 
   // ── view: UNIT DETAIL ────────────────────────────────────────────────────────
@@ -300,16 +465,49 @@
       </tr>`).join("")}</tbody></table></div>`;
   }
 
+  // editable partnerships table (the unit column is a live picklist of unc_units)
+  function editPartnershipTable(rows, unitOpts) {
+    const unitSel = (id, val) => `<select class="es" data-id="${esc(id)}" data-field="unit_id">${unitOpts.map((u) => `<option value="${esc(u.unit_id)}" ${u.unit_id === val ? "selected" : ""}>${esc(u.unit_name)}</option>`).join("")}</select>`;
+    const sel = (id, field, opts, val) => `<select class="es" data-id="${esc(id)}" data-field="${field}">${optionsHTML(opts, val)}</select>`;
+    return `<div class="table-wrap"><table class="data edit">
+      <thead><tr>
+        <th>UNC Unit</th><th>Area</th><th>Company</th><th>Description</th><th>Status</th>
+        <th>Start</th><th>End / Renewal</th><th>Recurring</th><th>Funding</th><th>Type</th>
+        <th>UNC POC</th><th>Company POC</th><th>Source</th><th>Verified</th><th>Research By</th><th>Date</th><th></th>
+      </tr></thead>
+      <tbody>${rows.map((r) => { const id = r.partnership_id; return `<tr data-id="${esc(id)}">
+        <td>${unitSel(id, r.unit_id)}</td>
+        <td>${sel(id, "area", AREA_OPTS, r.area)}</td>
+        ${editCell(id, "company_name", r.company_name, "strong")}
+        ${editCell(id, "description", r.description)}
+        <td>${sel(id, "status", STATUS_OPTS, r.status)}</td>
+        ${editCell(id, "start_date", r.start_date, "nowrap")}
+        ${editCell(id, "end_date", r.end_date || r.renewal_date, "nowrap")}
+        <td>${sel(id, "recurring", RECURRING_OPTS, r.recurring)}</td>
+        ${editCell(id, "funding_value", r.funding_value, "num")}
+        <td>${sel(id, "funding_type", FUNDING_TYPE_OPTS, r.funding_type)}</td>
+        ${editCell(id, "unc_poc", r.unc_poc)}
+        ${editCell(id, "company_poc", r.company_poc)}
+        <td class="src-link">${r.source_url ? `<a href="${esc(r.source_url)}" target="_blank" rel="noopener">link ↗</a>` : `<span class="ec" contenteditable="true" data-id="${esc(id)}" data-field="source_url" data-orig="">add…</span>`}</td>
+        <td>${sel(id, "verification_tier", TIER_OPTS, r.verification_tier)}</td>
+        ${editCell(id, "research_by", r.research_by)}
+        ${editCell(id, "date_of_research", r.date_of_research, "nowrap")}
+        <td class="rowtools"><button class="mini del" data-del-p="${esc(id)}" title="Delete">×</button></td>
+      </tr>`; }).join("")}</tbody></table></div>`;
+  }
+
   async function renderPartnerships(query) {
     const v = elView();
     v.innerHTML = `<div class="page wrap">
       <div class="page-head"><div class="card-top"><div><span class="eyebrow">Inventory</span>
         <h1 class="page-title">UNC Partnerships</h1>
-        <p class="page-sub">Industry partnerships in public data — filter by area or verification tier, open any source record, or export the full inventory.</p></div>
-        <button class="btn" id="export-btn">⤓ Export to Excel</button></div></div>
+        <p class="page-sub">Every external partnership, linked to a UNC unit. Click any cell to edit — changes save live. The unit column pulls from the same master list as Schools &amp; Units.</p></div>
+        <div class="head-actions"><button class="btn ghost" id="export-btn">⤓ Export</button><button class="btn" id="p-add">＋ Add Partnership</button></div></div></div>
       ${coverageBar()}
       <div class="toolbar">
+        <input type="search" id="f-q" placeholder="Search company or unit…" />
         <select id="f-area"><option value="">All areas</option></select>
+        <select id="f-status"><option value="">All statuses</option></select>
         <select id="f-tier"><option value="">All tiers</option></select>
         <button class="btn ghost" id="f-reset">Reset</button>
         <span class="count" id="p-count"></span>
@@ -319,26 +517,90 @@
 
     $("#export-btn").addEventListener("click", () => { window.location.href = API + "/partnerships/export"; });
 
-    let all;
-    try { all = await api("/partnerships"); }
-    catch (e) { console.error("/partnerships failed:", e); $("#p-body").innerHTML = errorHTML(e); return; }
-    const rows = all.partnerships || [];
+    let rows, unitOpts;
+    try {
+      const [all, units] = await Promise.all([api("/partnerships"), api("/units")]);
+      rows = all.partnerships || [];
+      unitOpts = units.filter((u) => u.unit_id !== "unc:root")
+        .map((u) => ({ unit_id: u.unit_id, unit_name: u.unit_name }))
+        .sort((a, b) => a.unit_name.localeCompare(b.unit_name));
+    } catch (e) { console.error("/partnerships failed:", e); $("#p-body").innerHTML = errorHTML(e); return; }
+
     const areas = [...new Set(rows.map((r) => r.area).filter(Boolean))].sort();
+    const statuses = [...new Set(rows.map((r) => r.status).filter(Boolean))].sort();
     const tiers = [...new Set(rows.map((r) => r.verification_tier).filter(Boolean))].sort();
     $("#f-area").innerHTML = `<option value="">All areas</option>` + areas.map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
+    $("#f-status").innerHTML = `<option value="">All statuses</option>` + statuses.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
     $("#f-tier").innerHTML = `<option value="">All tiers</option>` + tiers.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
     if (query.area) $("#f-area").value = query.area;
     if (query.tier) $("#f-tier").value = query.tier;
 
     const draw = () => {
-      const area = $("#f-area").value, tier = $("#f-tier").value;
-      const filtered = rows.filter((r) => (!area || r.area === area) && (!tier || r.verification_tier === tier));
+      const q = ($("#f-q").value || "").toLowerCase();
+      const area = $("#f-area").value, status = $("#f-status").value, tier = $("#f-tier").value;
+      const filtered = rows.filter((r) =>
+        (!area || r.area === area) && (!status || r.status === status) && (!tier || r.verification_tier === tier) &&
+        (!q || (r.company_name || "").toLowerCase().includes(q) || (r.unit_name || "").toLowerCase().includes(q)));
       $("#p-count").textContent = `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} partnerships`;
-      $("#p-body").innerHTML = filtered.length ? partnershipTable(filtered) : emptyHTML("No partnerships match", "Loosen the filters to see more.");
+      $("#p-body").innerHTML = filtered.length ? editPartnershipTable(filtered, unitOpts)
+        : emptyHTML("No partnerships yet", rows.length ? "Loosen the filters to see more." : "Add one to get started — click ＋ Add Partnership.");
     };
-    $("#f-area").addEventListener("change", draw);
-    $("#f-tier").addEventListener("change", draw);
-    $("#f-reset").addEventListener("click", () => { $("#f-area").value = ""; $("#f-tier").value = ""; draw(); });
+    ["f-q", "f-area", "f-status", "f-tier"].forEach((id) => { const el = document.getElementById(id); el.addEventListener(id === "f-q" ? "input" : "change", draw); });
+    $("#f-reset").addEventListener("click", () => { ["f-q", "f-area", "f-status", "f-tier"].forEach((id) => (document.getElementById(id).value = "")); draw(); });
+
+    $("#p-body").addEventListener("focusout", async (e) => {
+      const td = e.target.closest(".ec"); if (!td) return;
+      const val = td.textContent.trim() === "add…" ? "" : td.textContent.trim();
+      if (val === (td.dataset.orig || "")) return;
+      const r = rows.find((x) => x.partnership_id === td.dataset.id);
+      await saveField("/api/partnerships/", td.dataset.id, td.dataset.field, val, r);
+      td.dataset.orig = val;
+    });
+    $("#p-body").addEventListener("change", async (e) => {
+      const s = e.target.closest("select.es"); if (!s) return;
+      const r = rows.find((x) => x.partnership_id === s.dataset.id);
+      await saveField("/api/partnerships/", s.dataset.id, s.dataset.field, s.value, r);
+      if (s.dataset.field === "unit_id" && r) { const u = unitOpts.find((u) => u.unit_id === s.value); if (u) r.unit_name = u.unit_name; }
+    });
+    $("#p-body").addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-del-p]"); if (!btn) return;
+      const id = btn.dataset.delP;
+      if (!confirm("Delete this partnership? This can't be undone.")) return;
+      try { await apiWrite("DELETE", "/api/partnerships/" + enc(id)); rows = rows.filter((r) => r.partnership_id !== id); toast("Partnership deleted"); draw(); }
+      catch (err) { toast(err.message || "Delete failed", "err"); }
+    });
+
+    $("#p-add").addEventListener("click", () => {
+      openModal("Add Partnership", [
+        { key: "unit_id", label: "UNC unit", type: "select", options: unitOpts.map((u) => u.unit_id), value: unitOpts[0] && unitOpts[0].unit_id },
+        { key: "area", label: "Area", type: "select", options: AREA_OPTS, value: "Programs" },
+        { key: "company_name", label: "Company / partner", placeholder: "e.g. Cisco" },
+        { key: "description", label: "Description", type: "textarea" },
+        { key: "status", label: "Status", type: "select", options: STATUS_OPTS, value: "In Discussion" },
+        { key: "start_date", label: "Start date", type: "date" },
+        { key: "end_date", label: "End / renewal date", type: "date" },
+        { key: "recurring", label: "Recurring", type: "select", options: RECURRING_OPTS, value: "" },
+        { key: "funding_value", label: "Funding / value (USD)", type: "number" },
+        { key: "funding_type", label: "Funding type", type: "select", options: FUNDING_TYPE_OPTS, value: "" },
+        { key: "unc_poc", label: "UNC point of contact" },
+        { key: "company_poc", label: "Company point of contact" },
+        { key: "source_url", label: "Source / evidence URL", placeholder: "https://" },
+        { key: "verification_tier", label: "Verified status", type: "select", options: TIER_OPTS, value: "Inferred" },
+        { key: "research_by", label: "Research by" },
+        { key: "date_of_research", label: "Date of research", type: "date" },
+      ], async (vals) => {
+        const created = await apiWrite("POST", "/api/partnerships", vals);
+        const u = unitOpts.find((u) => u.unit_id === created.unit_id);
+        if (u) created.unit_name = u.unit_name;
+        rows.unshift(created);
+        toast("Partnership added");
+        // refresh filter option lists in case new values appeared
+        if (created.area && !areas.includes(created.area)) { areas.push(created.area); areas.sort(); $("#f-area").innerHTML = `<option value="">All areas</option>` + areas.map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join(""); }
+        draw();
+        return created;
+      });
+    });
+
     draw();
   }
 

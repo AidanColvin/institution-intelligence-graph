@@ -56,7 +56,9 @@ class DevHandler(SimpleHTTPRequestHandler):
         if not _is_api(parsed.path):
             return False
         qs = parse_qs(parsed.query)
-        status, headers, body = handle(method, parsed.path, qs)
+        length = int(self.headers.get("Content-Length") or 0)
+        req_body = self.rfile.read(length) if length else b""
+        status, headers, body = handle(method, parsed.path, qs, req_body)
         self.send_response(status)
         for key, value in headers.items():
             self.send_header(key, value)
@@ -68,6 +70,18 @@ class DevHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if not self._route("GET"):
             super().do_GET()
+
+    def do_POST(self):
+        if not self._route("POST"):
+            self.send_error(404)
+
+    def do_PUT(self):
+        if not self._route("PUT"):
+            self.send_error(404)
+
+    def do_DELETE(self):
+        if not self._route("DELETE"):
+            self.send_error(404)
 
     def do_OPTIONS(self):
         if not self._route("OPTIONS"):

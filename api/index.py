@@ -8,6 +8,7 @@ import json
 import math
 import re
 import os
+import secrets
 from pathlib import Path
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler
@@ -50,6 +51,52 @@ def _load_partnerships() -> dict:
 
 def _partnerships():
     return _load_partnerships()
+
+# ── editable write layer (keyless) ────────────────────────────────────────────
+# Live edits are persisted straight to frontend/partnerships.json — the same
+# single source of truth the GET endpoints read. No database, no API keys. On a
+# read-only host (e.g. Vercel's serverless FS) the write raises OSError and the
+# endpoint returns 503 so the UI can show a clear "edits not persisted" notice;
+# locally (dev_server) edits persist across refreshes.
+
+_EDITABLE_UNIT_FIELDS = {"parent_unit_id", "unit_name", "unit_type", "description",
+                         "focus_areas", "disciplines", "faculty_count", "student_count",
+                         "website_url", "research_by", "date_of_research", "notes"}
+_EDITABLE_PARTNERSHIP_FIELDS = {"unit_id", "area", "company_name", "description", "status",
+                                "start_date", "end_date", "renewal_date", "recurring",
+                                "funding_value", "funding_type", "unc_poc", "company_poc",
+                                "source_url", "verification_tier", "verification_notes",
+                                "research_by", "date_of_research"}
+
+
+def _read_inventory() -> dict:
+    """Fresh read from disk (bypasses the GET lru_cache) for read-modify-write."""
+    with open(PARTNERSHIPS_PATH) as f:
+        return json.load(f)
+
+
+def _save_inventory(data: dict) -> None:
+    with open(PARTNERSHIPS_PATH, "w") as f:
+        json.dump(data, f, ensure_ascii=False)
+    _load_partnerships.cache_clear()  # so subsequent GETs see the edit
+
+
+def _slugify(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_") or secrets.token_hex(3)
+
+
+def _recount_units(data: dict) -> None:
+    """Keep each unit's partnership_count in sync with the partnerships array."""
+    counts: dict = {}
+    for p in data.get("partnerships", []):
+        uid = p.get("unit_id")
+        if uid:
+            counts[uid] = counts.get(uid, 0) + 1
+    for u in data.get("units", []):
+        u["partnership_count"] = counts.get(u["unit_id"], 0)
+    meta = data.setdefault("meta", {})
+    meta["n_units"] = len(data.get("units", []))
+    meta["n_partnerships"] = len(data.get("partnerships", []))
 
 # ── normalisation helpers ────────────────────────────────────────────────────
 
@@ -113,7 +160,7 @@ def json_response(data, status=200):
 def cors_headers():
     return {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "*",
     }
 
@@ -192,11 +239,115 @@ def _build_inventory_xlsx(data: dict) -> bytes:
 
 # ── route handler ─────────────────────────────────────────────────────────────
 
-def handle(method: str, path: str, qs: dict) -> tuple[int, dict, bytes]:
+def handle_write(method: str, path: str, body: bytes) -> tuple[int, dict, bytes]:
+    """POST/PUT/DELETE for the editable units & partnerships inventory."""
+    try:
+        payload = json.loads(body or b"{}")
+    except (json.JSONDecodeError, ValueError):
+        return _cors_json({"error": "invalid JSON body"}, 400)
+
+    try:
+        data = _read_inventory()
+    except (OSError, json.JSONDecodeError) as exc:
+        return _cors_json({"error": f"inventory unavailable: {exc}"}, 503)
+
+    units = data.setdefault("units", [])
+    parts = data.setdefault("partnerships", [])
+
+    def commit(result, status=200):
+        _recount_units(data)
+        try:
+            _save_inventory(data)
+        except OSError:
+            # Read-only filesystem (e.g. serverless) — surface clearly, don't 500.
+            return _cors_json({"error": "read_only",
+                               "message": "This deployment is read-only; edits aren't persisted. Run locally to edit."}, 503)
+        return _cors_json(result, status)
+
+    # ── units ────────────────────────────────────────────────────────────────
+    if re.match(r"^/?(?:api/)?units/?$", path) and method == "POST":
+        name = (payload.get("unit_name") or "").strip()
+        if not name:
+            return _cors_json({"error": "unit_name is required"}, 400)
+        parent = payload.get("parent_unit_id") or "unc:root"
+        uid = payload.get("unit_id") or f"{parent}:{_slugify(name)}"
+        if any(u["unit_id"] == uid for u in units):
+            uid = f"{uid}_{secrets.token_hex(2)}"
+        unit = {"unit_id": uid, "parent_unit_id": parent, "unit_name": name,
+                "unit_type": payload.get("unit_type") or "Department",
+                "description": payload.get("description") or "", "focus_areas": payload.get("focus_areas") or "",
+                "disciplines": payload.get("disciplines") or "", "faculty_count": payload.get("faculty_count"),
+                "student_count": payload.get("student_count"), "website_url": payload.get("website_url") or "",
+                "research_by": payload.get("research_by") or "", "date_of_research": payload.get("date_of_research") or "",
+                "notes": payload.get("notes") or "", "partnership_count": 0, "top_companies": []}
+        units.append(unit)
+        return commit(unit, 201)
+
+    m = re.match(r"^/?(?:api/)?units/(.+)$", path)
+    if m and method in ("PUT", "DELETE"):
+        uid = unquote(m.group(1))
+        unit = next((u for u in units if u["unit_id"] == uid), None)
+        if not unit:
+            return _cors_json({"error": f"unit '{uid}' not found"}, 404)
+        if method == "DELETE":
+            data["units"] = [u for u in units if u["unit_id"] != uid]
+            return commit({"deleted": uid})
+        for k, v in payload.items():
+            if k in _EDITABLE_UNIT_FIELDS:
+                unit[k] = v
+        return commit(unit)
+
+    # ── partnerships ───────────────────────────────────────────────────────────
+    if re.match(r"^/?(?:api/)?partnerships/?$", path) and method == "POST":
+        uid = payload.get("unit_id")
+        unit = next((u for u in units if u["unit_id"] == uid), None)
+        pid = "man_" + secrets.token_hex(5)
+        row = {"partnership_id": pid, "unit_id": uid,
+               "unit_name": unit["unit_name"] if unit else payload.get("unit_name", ""),
+               "unit_type": unit.get("unit_type") if unit else "", "faculty_id": None, "faculty_name": "",
+               "area": payload.get("area") or "", "company_name": payload.get("company_name") or "",
+               "description": payload.get("description") or "", "status": payload.get("status") or "In Discussion",
+               "start_date": payload.get("start_date") or "", "end_date": payload.get("end_date") or "",
+               "renewal_date": payload.get("renewal_date") or "", "recurring": payload.get("recurring") or "",
+               "funding_value": payload.get("funding_value"), "funding_type": payload.get("funding_type") or "",
+               "unc_poc": payload.get("unc_poc") or "", "company_poc": payload.get("company_poc") or "",
+               "source_url": payload.get("source_url") or "",
+               "verification_tier": payload.get("verification_tier") or "Inferred",
+               "verification_notes": payload.get("verification_notes") or "",
+               "research_by": payload.get("research_by") or "", "date_of_research": payload.get("date_of_research") or ""}
+        parts.append(row)
+        return commit(row, 201)
+
+    m = re.match(r"^/?(?:api/)?partnerships/(.+)$", path)
+    if m and method in ("PUT", "DELETE"):
+        pid = unquote(m.group(1))
+        row = next((p for p in parts if p.get("partnership_id") == pid), None)
+        if not row:
+            return _cors_json({"error": f"partnership '{pid}' not found"}, 404)
+        if method == "DELETE":
+            data["partnerships"] = [p for p in parts if p.get("partnership_id") != pid]
+            return commit({"deleted": pid})
+        for k, v in payload.items():
+            if k in _EDITABLE_PARTNERSHIP_FIELDS:
+                row[k] = v
+        # keep denormalized unit name in sync if the unit changed
+        if "unit_id" in payload:
+            u = next((u for u in units if u["unit_id"] == payload["unit_id"]), None)
+            if u:
+                row["unit_name"], row["unit_type"] = u["unit_name"], u.get("unit_type")
+        return commit(row)
+
+    return _cors_json({"error": "Not found", "path": path, "method": method}, 404)
+
+
+def handle(method: str, path: str, qs: dict, body: bytes = b"") -> tuple[int, dict, bytes]:
     graph = _graph()
 
     if method == "OPTIONS":
         return 204, cors_headers(), b""
+
+    if method in ("POST", "PUT", "DELETE"):
+        return handle_write(method, path, body)
 
     # /health
     if path in ("/health", "/api/health"):
@@ -348,10 +499,21 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self._respond("GET")
 
+    def do_POST(self):
+        self._respond("POST")
+
+    def do_PUT(self):
+        self._respond("PUT")
+
+    def do_DELETE(self):
+        self._respond("DELETE")
+
     def _respond(self, method):
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
-        status, headers, body = handle(method, parsed.path, qs)
+        length = int(self.headers.get("Content-Length") or 0)
+        req_body = self.rfile.read(length) if length else b""
+        status, headers, body = handle(method, parsed.path, qs, req_body)
         self.send_response(status)
         for k, v in headers.items():
             self.send_header(k, v)
