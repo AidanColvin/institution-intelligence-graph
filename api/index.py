@@ -10,6 +10,7 @@ import re
 import os
 import sys
 import secrets
+import threading
 from pathlib import Path
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler
@@ -22,6 +23,23 @@ def _log(*a):
         print(*a, file=sys.stderr)
     except Exception:
         pass
+
+
+# Per-request context (Origin/Host), set at the top of handle(). Thread-local so
+# the threaded local dev server stays correct; on Vercel it's one request/process.
+_req_ctx = threading.local()
+
+
+def _ctx_same_origin() -> bool:
+    """True when the request carries a browser Origin whose host matches Host."""
+    origin = getattr(_req_ctx, "origin", "")
+    host = getattr(_req_ctx, "host", "")
+    if not origin:
+        return False
+    try:
+        return urlparse(origin).netloc == host
+    except ValueError:
+        return False
 
 # ── data loading ────────────────────────────────────────────────────────────
 
@@ -296,11 +314,7 @@ def json_response(data, status=200):
     return status, {"Content-Type": "application/json"}, body
 
 def cors_headers():
-    # GET (public read API) stays open; writes are enforced server-side via the
-    # edit token + same-origin check, not via CORS.
-    return {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    base = {
         "Access-Control-Allow-Headers": "Content-Type, X-Edit-Token, Authorization",
         "Access-Control-Max-Age": "86400",
         "X-Content-Type-Options": "nosniff",
@@ -310,7 +324,20 @@ def cors_headers():
         "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; sandbox",
         # Belt-and-suspenders HTTPS pinning (Vercel is HTTPS-only).
         "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+        "Vary": "Origin",
     }
+    if _ctx_same_origin():
+        # The app's own UI: echo its origin and allow the full method set. (True
+        # same-origin requests skip CORS anyway; this just keeps preflights happy.)
+        base["Access-Control-Allow-Origin"] = getattr(_req_ctx, "origin", "")
+        base["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    else:
+        # Cross-origin / non-browser callers only ever see the public READ API.
+        # Mutating methods are never advertised off-origin; writes are also
+        # blocked server-side by the same-origin guard regardless.
+        base["Access-Control-Allow-Origin"] = "*"
+        base["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    return base
 
 # ── partnership inventory helpers ─────────────────────────────────────────────
 
@@ -510,6 +537,13 @@ def handle_write(method: str, path: str, body: bytes, headers: dict) -> tuple[in
 
 
 def handle(method: str, path: str, qs: dict, body: bytes = b"", headers: dict | None = None) -> tuple[int, dict, bytes]:
+    # Record the request origin/host so cors_headers() can scope the policy:
+    # cross-origin callers get a read-only (GET) CORS surface, the app's own
+    # origin gets the full method set.
+    h = headers or {}
+    _req_ctx.origin = h.get("origin", "")
+    _req_ctx.host = h.get("host", "")
+
     graph = _graph()
 
     if method == "OPTIONS":
