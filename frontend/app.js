@@ -69,6 +69,7 @@ async function load() {
     wireSearch();
     const results = $("#results");
     if (results) { results.hidden = false; renderResults("", null, []); }
+    checkApiHealth();   // resolve the API badge instead of hanging on "Connecting…"
     return;
   }
 
@@ -235,7 +236,10 @@ async function checkApiHealth() {
     const t = setTimeout(() => ctrl.abort(), 4000);
     const res = await fetch(`${API_BASE}/health`, { signal: ctrl.signal });
     clearTimeout(t);
-    API_OK = res.ok;
+    // A "degraded" backend (graph not built) returns HTTP 200, so res.ok alone
+    // would mislabel it "Live API". Treat only status:"ok" as truly live.
+    const data = res.ok ? await res.json().catch(() => null) : null;
+    API_OK = !!(data && data.status === "ok");
   } catch (err) { API_OK = false; console.warn("[unc-graph] health check failed:", err); }
   renderApiStatus();
 }
