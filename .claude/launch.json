@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "fullstack",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["scripts/dev_server.py", "8077"],
+      "port": 8077
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "python3.13",
       "runtimeArgs": ["-m", "http.server", "8077", "--directory", "frontend"],
