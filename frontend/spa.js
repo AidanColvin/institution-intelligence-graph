@@ -335,7 +335,24 @@
     if (!co && !topical.length) {
       html = emptyHTML("No UNC connections found", `No company match or topical overlap for “${q}” in public records. Try a company name (e.g. Pfizer) or a research topic (e.g. oncology).`);
     }
+
+    // build an export of whatever this search surfaced
+    let xTitle = "", xCols = null, xRows = null;
+    if (co) {
+      xTitle = `${co.name} — UNC footprint`;
+      xRows = (co.units || []).flatMap((u) => (u.samples || []).map((s) => ({
+        unit: u.unit_name || u.unit_id, type: EDGE_LABEL[s.type] || s.type || "", title: s.title || "", date: s.date || "", url: s.url || "",
+      })));
+      if (!xRows.length) xRows = (co.units || []).map((u) => ({ unit: u.unit_name || u.unit_id, type: "", title: "", date: "", url: "" }));
+      xCols = [{ label: "UNC Unit", key: "unit", w: 30 }, { label: "Evidence Type", key: "type", w: 14 }, { label: "Title", key: "title", w: 60 }, { label: "Date", key: "date", w: 12 }, { label: "Source URL", key: "url", w: 40 }];
+    } else if (topical.length) {
+      xTitle = `Topical matches — ${q}`;
+      xRows = topical.map((t) => ({ unit: t.unit_name || t.unit_id, score: (t.score || 0).toFixed(3), keywords: (t.hits || []).join(", ") }));
+      xCols = [{ label: "UNC Unit", key: "unit", w: 30 }, { label: "Match Score", key: "score", w: 12 }, { label: "Matched Keywords", key: "keywords", w: 50 }];
+    }
+    if (xRows && xRows.length) html = `<div class="export-row">${exportButtons("s-exp")}</div>` + html;
     out.innerHTML = html;
+    if (xRows && xRows.length) wireExport("s-exp", () => ({ title: xTitle, filename: xTitle, columns: xCols, rows: xRows }));
   }
 
   // ── view: UNITS MASTER LIST (editable) ───────────────────────────────────────
@@ -791,8 +808,9 @@
   async function renderNetwork() {
     const v = elView();
     v.innerHTML = `<div class="page wrap">
-      <div class="page-head"><span class="eyebrow">Live graph</span><h1 class="page-title">Research network</h1>
+      <div class="page-head"><div class="card-top"><div><span class="eyebrow">Live graph</span><h1 class="page-title">Research network</h1>
         <p class="page-sub">Every dot is the UNC anchor, a unit, or a partner company; every line is a public record. Drag to rotate, scroll to zoom, click a node.</p></div>
+        <div class="head-actions">${exportButtons("net-exp")}</div></div></div>
       ${coverageBar()}
       <div class="network-stage"><div id="graph-3d"></div>
         <div class="net-legend">
@@ -806,6 +824,18 @@
     let g;
     try { g = await api("/api/graph", { timeoutMs: 20000 }); }
     catch (e) { console.error("/api/graph failed:", e); $("#graph-3d").parentElement.innerHTML = errorHTML(e); return; }
+
+    wireExport("net-exp", () => ({
+      title: "UNC Research Network — Companies", filename: "UNC_Network_Companies",
+      columns: [
+        { label: "Company", key: "name", w: 30 },
+        { label: "Confidence", key: "confidence", w: 14 },
+        { label: "Total Records", key: "total_edges", w: 14 },
+        { label: "Linked Units", get: (c) => (c.units || []).map((u) => u.unit_name || u.unit_id).join("; "), w: 60 },
+      ],
+      rows: g.companies || [],
+    }));
+
     if (typeof ForceGraph3D === "undefined") { $("#graph-3d").innerHTML = `<div class="error info" style="padding:40px">Network library failed to load (CDN blocked). The data is live at <code>/api/graph</code>.</div>`; return; }
 
     const nodes = [{ id: "unc:root", label: "UNC–Chapel Hill", group: "root", val: 30 }];
@@ -856,8 +886,9 @@
       ["Crossref", c.crossref_papers, "Published papers w/ UNC affiliation"],
     ].filter(([, n]) => n != null);
     v.innerHTML = `<div class="page wrap">
-      <div class="page-head"><span class="eyebrow">Methodology</span><h1 class="page-title">How this works</h1>
+      <div class="page-head"><div class="card-top"><div><span class="eyebrow">Methodology</span><h1 class="page-title">How this works</h1>
         <p class="page-sub">A precomputed graph of UNC–Chapel Hill's public research footprint, served live by a same-origin API. No LLM in the data path; entity resolution is deterministic; every source is free, public and keyless.</p></div>
+        <div class="head-actions">${exportButtons("about-exp")}</div></div></div>
       ${coverageBar()}
       <div class="grid">${rows.map(([name, n, desc]) => `<div class="card"><div class="card-top"><h3>${esc(name)}</h3></div><div class="bignum" style="margin-top:8px">${(+n).toLocaleString()}</div><div class="meta">${esc(desc)}</div></div>`).join("")}</div>
       <div class="page-head" style="margin-top:36px"><h2 class="page-title" style="font-size:22px">Confidence tiers</h2></div>
@@ -867,6 +898,11 @@
       </div>
       <p class="page-sub" style="margin-top:28px">Graph built <b>${esc(fr && fr.built_at ? fmtDate(fr.built_at) : "—")}</b>. Anchor: UNC–Chapel Hill (ROR <a href="https://ror.org/0130frc33" target="_blank" rel="noopener">0130frc33</a>).</p>
     </div>`;
+    wireExport("about-exp", () => ({
+      title: "UNC Research Intelligence — Data Sources", filename: "UNC_Data_Sources",
+      columns: [{ label: "Source", get: (r) => r[0], w: 24 }, { label: "Records", get: (r) => r[1], w: 12 }, { label: "Description", get: (r) => r[2], w: 50 }],
+      rows: rows,
+    }));
   }
 
   // ── router ─────────────────────────────────────────────────────────────────────
