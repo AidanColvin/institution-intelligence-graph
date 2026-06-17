@@ -11,11 +11,18 @@ Usage:
 from __future__ import annotations
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("export_graph")
 
 EDGE_WEIGHTS = {"trial": 4.0, "grant": 3.0, "contract": 2.0, "paper": 2.0, "patent": 2.0}
 SAMPLES_PER_UNIT = 3
@@ -50,9 +57,10 @@ def export(db_path: str, out_path: str, built_at: str) -> dict:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
     size_kb = out.stat().st_size / 1024
-    print(f"Wrote {out_path} ({size_kb:.0f} KB): "
-          f"{len(units)} units, {len(companies)} companies, "
-          f"{counts.get('edges', 0)} edges")
+    logger.info(
+        "Wrote %s (%.0f KB): %d units, %d companies, %d edges",
+        out_path, size_kb, len(units), len(companies), counts.get("edges", 0),
+    )
     return payload
 
 
