@@ -226,6 +226,17 @@ def handle(method: str, path: str, qs: dict) -> tuple[int, dict, bytes]:
         })
         return status, {**headers, **cors_headers()}, body
 
+    # /graph — full node/link graph for the network view (API-driven, so the
+    # frontend never reads the static graph.json file directly).
+    if path in ("/graph", "/api/graph"):
+        meta = graph.get("meta", {})
+        status, headers, body = json_response({
+            "meta": meta,
+            "units": graph.get("units", []),
+            "companies": graph.get("companies", []),
+        })
+        return status, {**headers, **cors_headers()}, body
+
     # /match/{company}
     m = re.match(r"^/?(?:api/)?match/(.+)$", path)
     if m:
@@ -237,6 +248,13 @@ def handle(method: str, path: str, qs: dict) -> tuple[int, dict, bytes]:
         topical = match_topical(company_name + " " + sector_hint, graph, top_n)
 
         unit_by_id = {u["id"]: u for u in graph.get("units", [])}
+        # Enrich each company→unit link with a human-readable unit name so the
+        # frontend shows "UNC School of Medicine" instead of the raw id "unc:som".
+        if co and co.get("units"):
+            co = {**co, "units": [
+                {**cu, "unit_name": cu.get("unit_name") or (unit_by_id.get(cu.get("unit_id"), {}).get("name")) or cu.get("unit_id")}
+                for cu in co["units"]
+            ]}
         topical_out = []
         for item in topical:
             u = item["unit"]
