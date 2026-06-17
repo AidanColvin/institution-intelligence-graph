@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 UNC_ROR_ID = "https://ror.org/0130frc33"
 UNC_ROR_BARE = "0130frc33"
 USER_AGENT = "UNC-Partnership-Scan/1.0 mailto:aidanacolvin@gmail.com"
+# Some public JSON APIs (e.g. ClinicalTrials.gov) reject the mailto: UA above.
+# A standard browser UA is used only for those public-data endpoints.
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+)
 
 # ── source endpoints (all free, keyless, public) ────────────────────────────
 NIH_SEARCH_URL = "https://api.reporter.nih.gov/v2/projects/search"

@@ -220,6 +220,37 @@ def _j(v: Any) -> str:
     return json.dumps(v, ensure_ascii=False)
 
 
+import re as _re
+
+_DATE_FULL = _re.compile(r"^(\d{4}-\d{2}-\d{2})")
+_DATE_YM = _re.compile(r"^(\d{4})-(\d{2})$")
+_DATE_Y = _re.compile(r"^(\d{4})$")
+
+
+def _coerce_date(v: Any) -> str | None:
+    """
+    Normalize a loose date value to YYYY-MM-DD for DuckDB DATE columns.
+
+    Public-source dates arrive as "2015", "2015-05", or "2015-05-21". DuckDB's
+    DATE type only accepts full dates, so partials are padded to the 1st and
+    anything unparseable becomes null (never a fabricated day).
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    full = _DATE_FULL.match(s)
+    if full:
+        return full.group(1)
+    ym = _DATE_YM.match(s)
+    if ym:
+        return f"{s}-01"
+    if _DATE_Y.match(s):
+        return f"{s}-01-01"
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Raw record upserts
 # ---------------------------------------------------------------------------
@@ -437,7 +468,7 @@ def upsert_partnership_unit(unit_id: str, parent_unit_id: str | None,
         conn.execute(sql, [unit_id, parent_unit_id, unit_name, unit_type,
                            description, focus_areas, disciplines, faculty_count,
                            student_count, website_url, research_by,
-                           date_of_research, notes])
+                           _coerce_date(date_of_research), notes])
 
 
 def upsert_partnership_faculty(faculty_id: str, unit_id: str | None,
@@ -462,7 +493,7 @@ def upsert_partnership_faculty(faculty_id: str, unit_id: str | None,
     """
     with connection() as conn:
         conn.execute(sql, [faculty_id, unit_id, full_name, title, profile_url,
-                           openalex_id, research_by, date_of_research])
+                           openalex_id, research_by, _coerce_date(date_of_research)])
 
 
 def upsert_partnership(row: dict) -> None:
@@ -501,12 +532,13 @@ def upsert_partnership(row: dict) -> None:
         conn.execute(sql, [
             row["partnership_id"], row.get("unit_id"), row.get("faculty_id"),
             row.get("area"), row.get("company_name"), row.get("description"),
-            row.get("status"), row.get("start_date"), row.get("end_date"),
-            row.get("renewal_date"), row.get("recurring"), row.get("funding_value"),
+            row.get("status"), _coerce_date(row.get("start_date")),
+            _coerce_date(row.get("end_date")), _coerce_date(row.get("renewal_date")),
+            row.get("recurring"), row.get("funding_value"),
             row.get("funding_type"), row.get("unc_poc"), row.get("company_poc"),
             row.get("source_url"), row.get("verification_tier"),
             row.get("verification_notes"), row.get("research_by"),
-            row.get("date_of_research"),
+            _coerce_date(row.get("date_of_research")),
         ])
 
 
