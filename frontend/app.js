@@ -456,10 +456,14 @@ function renderEvidence(co) {
     ? `<a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${esc(co.cik)}&type=10-K" target="_blank" rel="noopener">SEC CIK ${esc(co.cik)} ↗</a>`
     : "not in the SEC filer registry";
   const rows = (co.units || []).map(u => renderUnitEvRow(u)).join("");
+  // Coverage indicator: how many of the five public source types actually
+  // returned data for this company (PART 3 — "N of M sources returned data").
+  const ALL_TYPES = ["grant", "trial", "contract", "paper", "patent"];
   const types = sourceTypesOf(co);
+  const coverageCount = `${types.length} of ${ALL_TYPES.length} source types`;
   const sourceText = types.length
-    ? "Sourced from " + types.map(t => SOURCE_LABEL[t] || t).join(", ")
-    : "";
+    ? `${coverageCount}: ` + types.map(t => SOURCE_LABEL[t] || t).join(", ")
+    : "No source types found";
   const fresh = freshnessLabel();
   const coverage = [sourceText, fresh ? `as of ${fresh}` : ""].filter(Boolean).join(" · ");
   const tierNote = co.confidence === "confirmed"
