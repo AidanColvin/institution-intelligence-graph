@@ -8,11 +8,20 @@ import json
 import math
 import re
 import os
+import sys
 import secrets
 from pathlib import Path
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
+
+
+def _log(*a):
+    """Server-side diagnostics (captured in Vercel logs); never sent to clients."""
+    try:
+        print(*a, file=sys.stderr)
+    except Exception:
+        pass
 
 # ── data loading ────────────────────────────────────────────────────────────
 
@@ -28,7 +37,9 @@ def _load_graph() -> dict:
         with open(GRAPH_PATH) as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
-        return {"meta": {"built_at": None, "error": str(exc)}, "units": [], "companies": [], "_empty": True}
+        # Log the detail server-side, but never leak paths/exceptions to clients.
+        _log("graph load failed:", repr(exc))
+        return {"meta": {"built_at": None, "error": "graph unavailable"}, "units": [], "companies": [], "_empty": True}
 
 def _graph():
     return _load_graph()
@@ -47,7 +58,8 @@ def _load_partnerships() -> dict:
         with open(PARTNERSHIPS_PATH) as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
-        return {**empty, "meta": {"error": str(exc)}}
+        _log("partnerships load failed:", repr(exc))
+        return {**empty, "meta": {"error": "inventory unavailable"}}
 
 def _partnerships():
     # When a writable store (Vercel KV) is configured, prefer its live copy so
@@ -76,6 +88,43 @@ _EDITABLE_PARTNERSHIP_FIELDS = {"unit_id", "area", "company_name", "description"
                                 "source_url", "verification_tier", "verification_notes",
                                 "research_by", "date_of_research"}
 _URL_FIELDS = {"website_url", "source_url"}
+
+# ── input sanitisation ────────────────────────────────────────────────────────
+# Every value that lands in the inventory is forced to a safe scalar: control
+# characters stripped, strings length-capped, nested structures rejected. This
+# bounds stored size and keeps non-scalar junk out of the JSON store regardless
+# of what a client sends.
+MAX_STR = 20_000                       # per-field character cap
+MAX_FIELDS = 60                        # reject payloads with absurd key counts
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_ID_OK = re.compile(r"[^A-Za-z0-9:_./-]")
+
+
+def _clean_scalar(v):
+    """Coerce a write value to a safe scalar; drop nested structures."""
+    if v is None or isinstance(v, bool) or isinstance(v, (int, float)):
+        return v
+    if isinstance(v, str):
+        s = _CTRL.sub("", v).strip()
+        return s[:MAX_STR]
+    return None  # lists/dicts are not valid in any editable field
+
+
+def _clean_id(v) -> str:
+    """Restrict client-supplied identifiers to a safe charset (length-capped)."""
+    s = _CTRL.sub("", str(v or "")).strip()
+    return _ID_OK.sub("", s)[:200]
+
+
+_ID_PAYLOAD_FIELDS = {"unit_id", "parent_unit_id"}
+
+
+def _clean_payload(payload: dict) -> dict:
+    out = {}
+    for k, v in payload.items():
+        k = str(k)[:120]
+        out[k] = _clean_id(v) if k in _ID_PAYLOAD_FIELDS else _clean_scalar(v)
+    return out
 
 
 # ── authn / request hardening ─────────────────────────────────────────────────
@@ -253,9 +302,14 @@ def cors_headers():
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, X-Edit-Token, Authorization",
+        "Access-Control-Max-Age": "86400",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "X-Frame-Options": "DENY",
+        # JSON/exports are never a document context — lock down any accidental render.
+        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; sandbox",
+        # Belt-and-suspenders HTTPS pinning (Vercel is HTTPS-only).
+        "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
     }
 
 # ── partnership inventory helpers ─────────────────────────────────────────────
@@ -348,7 +402,11 @@ def handle_write(method: str, path: str, body: bytes, headers: dict) -> tuple[in
         return _cors_json({"error": "invalid JSON body"}, 400)
     if not isinstance(payload, dict):
         return _cors_json({"error": "JSON body must be an object"}, 400)
-    # sanitize URL-bearing fields up front
+    if len(payload) > MAX_FIELDS:
+        return _cors_json({"error": "too_many_fields", "message": "Request has too many fields."}, 400)
+    # Force every value to a safe scalar (control chars stripped, length-capped,
+    # nested structures dropped), then sanitize URL-bearing fields.
+    payload = _clean_payload(payload)
     for f in _URL_FIELDS:
         if f in payload:
             payload[f] = _safe_url(payload[f])
@@ -356,7 +414,8 @@ def handle_write(method: str, path: str, body: bytes, headers: dict) -> tuple[in
     try:
         data = _read_inventory()
     except (OSError, json.JSONDecodeError) as exc:
-        return _cors_json({"error": f"inventory unavailable: {exc}"}, 503)
+        _log("inventory read failed:", repr(exc))
+        return _cors_json({"error": "inventory unavailable"}, 503)
 
     units = data.setdefault("units", [])
     parts = data.setdefault("partnerships", [])
@@ -370,7 +429,8 @@ def handle_write(method: str, path: str, body: bytes, headers: dict) -> tuple[in
             return _cors_json({"error": "read_only",
                                "message": "This deployment is read-only; configure Vercel KV (or run locally) to persist edits."}, 503)
         except Exception as exc:  # KV/network failure
-            return _cors_json({"error": "persist_failed", "message": f"Edit could not be saved: {exc}"}, 502)
+            _log("persist failed:", repr(exc))
+            return _cors_json({"error": "persist_failed", "message": "Edit could not be saved. Please retry."}, 502)
         return _cors_json(result, status)
 
     # ── units ────────────────────────────────────────────────────────────────
@@ -378,8 +438,8 @@ def handle_write(method: str, path: str, body: bytes, headers: dict) -> tuple[in
         name = (payload.get("unit_name") or "").strip()
         if not name:
             return _cors_json({"error": "unit_name is required"}, 400)
-        parent = payload.get("parent_unit_id") or "unc:root"
-        uid = payload.get("unit_id") or f"{parent}:{_slugify(name)}"
+        parent = _clean_id(payload.get("parent_unit_id")) or "unc:root"
+        uid = _clean_id(payload.get("unit_id")) or f"{parent}:{_slugify(name)}"
         if any(u["unit_id"] == uid for u in units):
             uid = f"{uid}_{secrets.token_hex(2)}"
         unit = {"unit_id": uid, "parent_unit_id": parent, "unit_name": name,
@@ -408,7 +468,7 @@ def handle_write(method: str, path: str, body: bytes, headers: dict) -> tuple[in
 
     # ── partnerships ───────────────────────────────────────────────────────────
     if re.match(r"^/?(?:api/)?partnerships/?$", path) and method == "POST":
-        uid = payload.get("unit_id")
+        uid = _clean_id(payload.get("unit_id"))
         unit = next((u for u in units if u["unit_id"] == uid), None)
         pid = "man_" + secrets.token_hex(5)
         row = {"partnership_id": pid, "unit_id": uid,
@@ -500,9 +560,13 @@ def handle(method: str, path: str, qs: dict, body: bytes = b"", headers: dict | 
     # /match/{company}
     m = re.match(r"^/?(?:api/)?match/(.+)$", path)
     if m:
-        company_name = unquote(m.group(1))
-        sector_hint = (qs.get("sector_hint") or [""])[0]
-        top_n = int((qs.get("top_n") or ["10"])[0])
+        company_name = unquote(m.group(1))[:300]
+        sector_hint = (qs.get("sector_hint") or [""])[0][:300]
+        try:
+            top_n = int((qs.get("top_n") or ["10"])[0])
+        except (TypeError, ValueError):
+            top_n = 10
+        top_n = max(1, min(top_n, 50))
 
         co = match_company(company_name, graph)
         topical = match_topical(company_name + " " + sector_hint, graph, top_n)

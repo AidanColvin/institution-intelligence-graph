@@ -53,12 +53,12 @@
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────
-  const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])));
+  const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"'`]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "`": "&#96;" }[c])));
   const fmtUSD = (n) => { if (!n) return ""; n = +n; if (n >= 1e9) return "$" + (n / 1e9).toFixed(1) + "B"; if (n >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M"; if (n >= 1e3) return "$" + (n / 1e3).toFixed(0) + "K"; return "$" + n; };
   const fmtDate = (d) => { if (!d) return ""; try { const dt = new Date(d); if (isNaN(dt)) return d; return dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: d.length > 7 ? "numeric" : undefined }); } catch { return d; } };
   const EDGE_LABEL = { grant: "Grant", paper: "Paper", trial: "Trial", contract: "Contract", patent: "Patent" };
   const loadingHTML = (label) => `<div class="loading"><div class="spinner"></div>${esc(label || "Loading…")}</div>`;
-  function errorHTML(err, ctx) { const f = friendlyError(err, ctx); return `<div class="error"><h3>${esc(f.title)}</h3><p>${esc(f.msg)}</p><p style="margin-top:14px"><button class="btn ghost" onclick="location.reload()">Retry</button></p></div>`; }
+  function errorHTML(err, ctx) { const f = friendlyError(err, ctx); return `<div class="error"><h3>${esc(f.title)}</h3><p>${esc(f.msg)}</p><p style="margin-top:14px"><button class="btn ghost" data-reload>Retry</button></p></div>`; }
   function emptyHTML(title, msg) { return `<div class="empty"><h3>${esc(title)}</h3><p>${esc(msg)}</p></div>`; }
   const enc = encodeURIComponent;
 
@@ -337,7 +337,7 @@
         const samples = (u.samples || []).slice(0, 5).map((s) => `
           <div class="ev-sample">
             <span class="ev-type">${esc(EDGE_LABEL[s.type] || s.type)}</span>
-            <span style="flex:1">${safeUrl(s.url) ? `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a>` : esc(s.title || "")}</span>
+            <span style="flex:1">${safeUrl(s.url) ? `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener noreferrer">${esc(s.title || s.url)}</a>` : esc(s.title || "")}</span>
             <span class="ev-date">${esc(fmtDate(s.date))}</span>
           </div>`).join("");
         return `<div class="ev-unit">
@@ -567,7 +567,7 @@
       const rows = [
         ["Faculty", unit.faculty_count],
         ["Partnerships", unit.partnership_count],
-        ["Website", safeUrl(unit.website_url) ? `<a href="${esc(safeUrl(unit.website_url))}" target="_blank" rel="noopener">${esc(unit.website_url)}</a>` : ""],
+        ["Website", safeUrl(unit.website_url) ? `<a href="${esc(safeUrl(unit.website_url))}" target="_blank" rel="noopener noreferrer">${esc(unit.website_url)}</a>` : ""],
         ["Disciplines", Array.isArray(unit.disciplines) ? unit.disciplines.join(", ") : unit.disciplines],
         ["Researched by", unit.research_by],
         ["As of", fmtDate(unit.date_of_research)],
@@ -615,7 +615,7 @@
         <td>${esc(r.company_name || "")}</td>
         <td><span class="badge ${esc(r.verification_tier || "")}">${esc(r.verification_tier || "")}</span></td>
         <td>${esc(fmtUSD(r.funding_value))}</td>
-        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener">record ↗</a>` : ""}</td>
+        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener noreferrer">record ↗</a>` : ""}</td>
         <td>${esc(fmtDate(r.start_date || r.date_of_research))}</td>
       </tr>`).join("")}</tbody></table></div>`;
   }
@@ -643,7 +643,7 @@
         <td>${sel(id, "funding_type", FUNDING_TYPE_OPTS, r.funding_type)}</td>
         ${editCell(id, "unc_poc", r.unc_poc)}
         ${editCell(id, "company_poc", r.company_poc)}
-        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener">link ↗</a>` : `<span class="ec" contenteditable="true" data-id="${esc(id)}" data-field="source_url" data-orig="${esc(r.source_url || "")}">${r.source_url ? esc(r.source_url) : "add…"}</span>`}</td>
+        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener noreferrer">link ↗</a>` : `<span class="ec" contenteditable="true" data-id="${esc(id)}" data-field="source_url" data-orig="${esc(r.source_url || "")}">${r.source_url ? esc(r.source_url) : "add…"}</span>`}</td>
         <td>${sel(id, "verification_tier", TIER_OPTS, r.verification_tier)}</td>
         ${editCell(id, "research_by", r.research_by)}
         ${editCell(id, "date_of_research", r.date_of_research, "nowrap")}
@@ -785,7 +785,7 @@
       <div class="card-top"><h3>${esc(f.full_name)}</h3>${f.partnership_count ? `<span class="kind">${f.partnership_count} partnership${f.partnership_count === 1 ? "" : "s"}</span>` : ""}</div>
       <div class="meta">${esc(f.title || "")}${f.unit_name ? `${f.title ? " · " : ""}<a href="#/unit/${enc(f.unit_id)}">${esc(f.unit_name)}</a>` : ""}</div>
       ${f.top_company ? `<div class="chips"><span class="chip">${esc(f.top_company)}</span></div>` : ""}
-      ${safeUrl(f.profile_url) ? `<div style="margin-top:10px"><a class="src-link" href="${esc(safeUrl(f.profile_url))}" target="_blank" rel="noopener">profile ↗</a></div>` : ""}
+      ${safeUrl(f.profile_url) ? `<div style="margin-top:10px"><a class="src-link" href="${esc(safeUrl(f.profile_url))}" target="_blank" rel="noopener noreferrer">profile ↗</a></div>` : ""}
     </div>`;
   }
   let FACULTY_CACHE = null;
@@ -843,6 +843,8 @@
         <div class="head-actions">${exportButtons("net-exp")}</div></div></div>
       ${coverageBar()}
       <div class="network-stage"><div id="graph-3d"></div>
+        <div class="net-status" id="net-status">Assembling network…</div>
+        <button class="net-replay" id="net-replay" title="Replay the network growth">↻ Replay growth</button>
         <div class="net-legend">
           <span><i style="background:#1d1d1f"></i> UNC–Chapel Hill</span>
           <span><i style="background:#3f7d6e"></i> School / unit</span>
@@ -868,38 +870,192 @@
 
     if (typeof ForceGraph3D === "undefined") { $("#graph-3d").innerHTML = `<div class="error info" style="padding:40px">Network library failed to load (CDN blocked). The data is live at <code>/api/graph</code>.</div>`; return; }
 
-    const nodes = [{ id: "unc:root", label: "UNC–Chapel Hill", group: "root", val: 30 }];
-    const links = [];
-    (g.units || []).forEach((u) => {
-      if (u.id === "unc:root") return;
-      const fp = u.footprint || {};
-      const total = Object.values(fp).reduce((a, b) => a + (typeof b === "number" ? b : 0), 0);
-      nodes.push({ id: u.id, label: u.name, group: "unit", val: 6 + Math.min(total, 30) });
-      links.push({ source: "unc:root", target: u.id });
-    });
-    const unitIds = new Set(nodes.map((n) => n.id));
-    (g.companies || []).forEach((c) => {
-      nodes.push({ id: c.id, label: c.name, group: c.confidence === "confirmed" ? "confirmed" : "probable", val: 3 + Math.min(c.total_edges || 1, 14) });
-      (c.units || []).forEach((cu) => { if (unitIds.has(cu.unit_id)) links.push({ source: c.id, target: cu.unit_id }); });
-    });
+    // ── staged data for the "evolution" build: the anchor + its schools/units
+    //    appear first, then partner companies stream in over a couple of
+    //    seconds, so you watch the network grow and reorganise rather than
+    //    having it pop in fully-formed. ──
+    const unitIdSet = new Set(["unc:root"]);
+    (g.units || []).forEach((u) => { if (u.id !== "unc:root") unitIdSet.add(u.id); });
+
+    const seed = () => {
+      const nodes = [{ id: "unc:root", label: "UNC–Chapel Hill", group: "root", val: 42 }];
+      const links = [];
+      (g.units || []).forEach((u) => {
+        if (u.id === "unc:root") return;
+        const total = Object.values(u.footprint || {}).reduce((a, b) => a + (typeof b === "number" ? b : 0), 0);
+        nodes.push({ id: u.id, label: u.name, group: "unit", val: 8 + Math.min(total, 34), weight: total });
+        links.push({ source: "unc:root", target: u.id, kind: "anchor" });
+      });
+      return { nodes, links };
+    };
+    // a fresh company node + its evidence links, rebuilt per run so a replay
+    // re-grows from the centre instead of snapping back into place
+    const makeCompany = (c) => {
+      const edges = c.total_edges || 1;
+      const node = { id: c.id, label: c.name, group: c.confidence === "confirmed" ? "confirmed" : "probable", val: 3 + Math.min(edges, 16), weight: edges };
+      const links = [];
+      (c.units || []).forEach((cu) => { if (unitIdSet.has(cu.unit_id)) links.push({ source: c.id, target: cu.unit_id, kind: "evidence", weight: edges }); });
+      return { node, links };
+    };
 
     const COLORS = { root: "#1d1d1f", unit: "#3f7d6e", confirmed: "#5b8def", probable: "#9a8654" };
+    const GROUP_LABEL = { root: "UNC–Chapel Hill", unit: "School / unit", confirmed: "Company · confirmed", probable: "Company · probable" };
     const stage = $("#graph-3d");
-    const Graph = ForceGraph3D()(stage)
-      .graphData({ nodes, links })
+
+    // hover state: highlight a node, its neighbours and the links between them
+    const hlNodes = new Set();
+    const hlLinks = new Set();
+    let hoverNode = null;
+
+    const Graph = ForceGraph3D({ controlType: "orbit", rendererConfig: { antialias: true, alpha: true } })(stage)
+      .graphData({ nodes: [], links: [] })
       .backgroundColor("rgba(0,0,0,0)")
-      .nodeLabel((n) => n.label)
-      .nodeVal("val")
-      .nodeColor((n) => COLORS[n.group] || "#999")
+      .showNavInfo(false)
+      .nodeResolution(16)
       .nodeOpacity(0.95)
-      .linkColor(() => "rgba(63,125,110,0.18)")
-      .linkWidth(0.5)
-      .linkDirectionalParticles(1)
-      .linkDirectionalParticleWidth(1.4)
-      .linkDirectionalParticleColor(() => "#3f7d6e")
+      .nodeRelSize(4.2)
+      .nodeLabel((n) => `<div class="g3d-tip"><b>${esc(n.label)}</b><span>${esc(GROUP_LABEL[n.group] || n.group)}${n.weight ? ` · ${(+n.weight).toLocaleString()} records` : ""}</span></div>`)
+      .nodeVal((n) => (n === hoverNode ? 1.9 : hlNodes.has(n) ? 1.35 : 1) * (n.val || 3))
+      .nodeColor((n) => COLORS[n.group] || "#999")
+      .linkCurvature((l) => (l.kind === "evidence" ? 0.22 : 0.06))
+      .linkColor((l) => hlLinks.has(l) ? "rgba(29,29,31,0.72)" : (l.kind === "anchor" ? "rgba(63,125,110,0.62)" : "rgba(63,125,110,0.4)"))
+      .linkWidth((l) => hlLinks.has(l) ? 2.6 : (l.kind === "anchor" ? 1.5 : 0.95))
+      .linkDirectionalParticles((l) => hlLinks.has(l) ? 6 : (l.kind === "anchor" ? 3 : 2))
+      .linkDirectionalParticleWidth((l) => hlLinks.has(l) ? 3 : 1.5)
+      .linkDirectionalParticleSpeed((l) => hlLinks.has(l) ? 0.012 : 0.005)
+      .linkDirectionalParticleColor((l) => hlLinks.has(l) ? "#1d1d1f" : "#3f7d6e")
+      .onNodeHover((node) => {
+        if (node === hoverNode) return;
+        hoverNode = node || null;
+        hlNodes.clear(); hlLinks.clear();
+        if (node) {
+          hlNodes.add(node);
+          Graph.graphData().links.forEach((l) => {
+            if (l.source === node || l.target === node) {
+              hlLinks.add(l);
+              hlNodes.add(l.source === node ? l.target : l.source);
+            }
+          });
+        }
+        stage.style.cursor = node ? "pointer" : "";
+        // re-evaluate the visual accessors so the highlight takes effect
+        Graph.nodeVal(Graph.nodeVal()).linkColor(Graph.linkColor()).linkWidth(Graph.linkWidth())
+          .linkDirectionalParticles(Graph.linkDirectionalParticles())
+          .linkDirectionalParticleWidth(Graph.linkDirectionalParticleWidth())
+          .linkDirectionalParticleSpeed(Graph.linkDirectionalParticleSpeed())
+          .linkDirectionalParticleColor(Graph.linkDirectionalParticleColor());
+      })
       .onNodeClick((n) => { if (n.group === "unit") location.hash = "#/unit/" + enc(n.id); else if (n.group !== "root") location.hash = "#/search/" + enc(n.label); });
+
+    // baseline forces; the morph loop below nudges these over time so the
+    // structure keeps reorganising. Lower velocity decay = more fluid, neuron-
+    // like drift between states.
+    try {
+      Graph.d3Force("charge").strength(-120);
+      const lf = Graph.d3Force("link");
+      if (lf) lf.distance((l) => (l.kind === "anchor" ? 46 : 30));
+    } catch (_) {}
+    Graph.cooldownTime(4000).warmupTicks(30).d3VelocityDecay(0.28);
+
     Graph.width(stage.clientWidth).height(stage.clientHeight);
-    window.addEventListener("resize", () => Graph.width(stage.clientWidth).height(stage.clientHeight), { passive: true });
+    const onResize = () => Graph.width(stage.clientWidth).height(stage.clientHeight);
+    window.addEventListener("resize", onResize, { passive: true });
+
+    // ── auto-orbit: OrbitControls slowly spins the camera around the graph's
+    //    centre (set by zoomToFit) so the view is always alive and stays
+    //    framed. Drag/scroll pauses the spin; it resumes after a short idle.
+    let rafId = 0, resumeTimer = null;
+    const controls = Graph.controls();
+    if (controls) {
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.rotateSpeed = 0.7;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.5;
+      if (controls.addEventListener) {
+        controls.addEventListener("start", () => { controls.autoRotate = false; clearTimeout(resumeTimer); });
+        controls.addEventListener("end", () => { clearTimeout(resumeTimer); resumeTimer = setTimeout(() => { controls.autoRotate = true; }, 3500); });
+      }
+    }
+    // frame the graph once it first settles; after that the morph loop keeps it
+    // changing shape, so we don't re-fit every cycle (that would fight the orbit)
+    let buildTimer = null, morphTimer = null, building = false, framed = false;
+    Graph.onEngineStop(() => { if (!framed) { framed = true; Graph.zoomToFit(1000, 70); } });
+
+    // ── evolution build: seed with the anchor + schools, then stream partner
+    //    companies + their connections in over a couple of seconds so the graph
+    //    visibly grows and reorganises. Re-runnable via the Replay button. ──
+    const statusEl = document.getElementById("net-status");
+    function build() {
+      clearTimeout(buildTimer);
+      building = true;
+      const s = seed();
+      const shownNodes = s.nodes.slice();
+      const shownLinks = s.links.slice();
+      Graph.graphData({ nodes: shownNodes, links: shownLinks });
+      const comps = (g.companies || []).map(makeCompany);
+      const total = comps.length;
+      // ~14 chunky steps: enough to read as "growing", few enough that the
+      // force engine isn't re-heated so often that the frame rate drops.
+      const batch = Math.max(12, Math.ceil(total / 14));
+      let i = 0;
+      if (statusEl) statusEl.textContent = "Connecting UNC schools…";
+      (function grow() {
+        if (!document.body.contains(stage)) { clearTimeout(buildTimer); return; }
+        if (i >= total) {
+          building = false;
+          framed = true;
+          if (statusEl) statusEl.textContent = `Live · ${shownNodes.length.toLocaleString()} nodes · ${shownLinks.length.toLocaleString()} connections`;
+          Graph.zoomToFit(1000, 70);
+          return;
+        }
+        const end = Math.min(i + batch, total);
+        for (; i < end; i++) { shownNodes.push(comps[i].node); comps[i].links.forEach((l) => shownLinks.push(l)); }
+        Graph.graphData({ nodes: shownNodes, links: shownLinks });
+        if (statusEl) statusEl.textContent = `Mapping connections… ${i.toLocaleString()} / ${total.toLocaleString()} partners`;
+        buildTimer = setTimeout(grow, 150);
+      })();
+    }
+    const replayBtn = document.getElementById("net-replay");
+    if (replayBtn) replayBtn.addEventListener("click", build);
+    build();
+
+    // ── living neural net: every few seconds nudge the forces and re-heat so
+    //    the network keeps changing shape and structure — clusters drift apart,
+    //    contract and re-form — instead of freezing into one static layout. ──
+    let phase = 0;
+    (function morph() {
+      morphTimer = setTimeout(() => {
+        if (!document.body.contains(stage)) return; // view torn down → stop
+        if (!building) {
+          phase += 1;
+          const charge = -120 + Math.sin(phase * 0.6) * 55;        // -65 .. -175
+          const linkD = 34 + Math.sin(phase * 0.9 + 1) * 12;       // 22 .. 46
+          try {
+            Graph.d3Force("charge").strength(charge);
+            const lf = Graph.d3Force("link");
+            if (lf) lf.distance((l) => (l.kind === "anchor" ? linkD + 16 : linkD));
+            if (Graph.d3ReheatSimulation) Graph.d3ReheatSimulation();
+          } catch (_) {}
+        }
+        morph();
+      }, 6000);
+    })();
+
+    // drive the controls every frame (autoRotate + damping) and tear everything
+    // down when the network view is replaced, so nothing leaks across routes.
+    (function tick() {
+      if (!document.body.contains(stage)) {
+        cancelAnimationFrame(rafId);
+        clearTimeout(buildTimer);
+        clearTimeout(morphTimer);
+        window.removeEventListener("resize", onResize);
+        try { Graph.pauseAnimation && Graph.pauseAnimation(); } catch (_) {}
+        return;
+      }
+      if (controls && controls.update) controls.update();
+      rafId = requestAnimationFrame(tick);
+    })();
   }
 
   // ── view: ABOUT ────────────────────────────────────────────────────────────────
@@ -926,7 +1082,7 @@
         <div class="card"><span class="badge confirmed">confirmed</span><p class="meta" style="margin-top:10px">A structured identifier matched — SEC CIK, ORCID, or a named trial sponsor. High trust.</p></div>
         <div class="card"><span class="badge probable">probable</span><p class="meta" style="margin-top:10px">A normalized-name match only. Plausible, but not anchored to a unique identifier.</p></div>
       </div>
-      <p class="page-sub" style="margin-top:28px">Graph built <b>${esc(fr && fr.built_at ? fmtDate(fr.built_at) : "—")}</b>. Anchor: UNC–Chapel Hill (ROR <a href="https://ror.org/0130frc33" target="_blank" rel="noopener">0130frc33</a>).</p>
+      <p class="page-sub" style="margin-top:28px">Graph built <b>${esc(fr && fr.built_at ? fmtDate(fr.built_at) : "—")}</b>. Anchor: UNC–Chapel Hill (ROR <a href="https://ror.org/0130frc33" target="_blank" rel="noopener noreferrer">0130frc33</a>).</p>
     </div>`;
     wireExport("about-exp", () => ({
       title: "UNC Research Intelligence — Data Sources", filename: "UNC_Data_Sources",
@@ -987,6 +1143,9 @@
     });
     try { FRESHNESS = await api("/freshness"); const fb = document.getElementById("footer-built"); if (fb && FRESHNESS.built_at) fb.textContent = fmtDate(FRESHNESS.built_at); }
     catch (e) { console.error("/freshness failed:", e); }
+    // Delegated Retry handler (replaces an inline onclick so the CSP can forbid
+    // inline script entirely).
+    document.addEventListener("click", (e) => { if (e.target.closest("[data-reload]")) location.reload(); });
     window.addEventListener("hashchange", route);
     route();
   }
