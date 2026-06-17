@@ -106,6 +106,64 @@ CREATE TABLE IF NOT EXISTS topic_profiles (
     concept_codes JSON NOT NULL DEFAULT '[]',
     updated_at TEXT NOT NULL
 );
+
+-- ── Partnership inventory (Tiers 1-3 + evidence) ───────────────────────────
+-- Separate from the matching graph (nodes_*/edges) above. These power the
+-- campus-wide partnership sector scan and UNC_Partnership_Inventory.xlsx.
+-- FK relationships are enforced by build order (Tier1 -> Tier2 -> Tier3 ->
+-- evidence), not by DuckDB FOREIGN KEY clauses, which would reject upserts
+-- whose referenced row is inserted in a later pass.
+
+CREATE TABLE IF NOT EXISTS unc_units (
+    unit_id          TEXT PRIMARY KEY,
+    parent_unit_id   TEXT,                 -- null for top-level schools
+    unit_name        TEXT NOT NULL,
+    unit_type        TEXT,                 -- School / Department / Lab / Center / Institute
+    description      TEXT,
+    focus_areas      TEXT,                 -- semicolon-separated
+    disciplines      TEXT,                 -- semicolon-separated
+    faculty_count    INTEGER,
+    student_count    INTEGER,
+    website_url      TEXT,
+    research_by      TEXT,
+    date_of_research DATE,
+    notes            TEXT
+);
+
+CREATE TABLE IF NOT EXISTS unc_faculty (
+    faculty_id       TEXT PRIMARY KEY,
+    unit_id          TEXT,
+    full_name        TEXT NOT NULL,
+    title            TEXT,
+    profile_url      TEXT,
+    openalex_id      TEXT,
+    research_by      TEXT,
+    date_of_research DATE
+);
+
+CREATE TABLE IF NOT EXISTS unc_partnerships (
+    partnership_id    TEXT PRIMARY KEY,
+    unit_id           TEXT,
+    faculty_id        TEXT,                -- null if unit-level
+    area              TEXT,                -- Events / Scholarships / Talent Pipeline /
+                                           -- Programs / Research Grant / Clinical Trial
+    company_name      TEXT,
+    description       TEXT,
+    status            TEXT,                -- Active / Past / In Discussion / Lapsed
+    start_date        DATE,
+    end_date          DATE,
+    renewal_date      DATE,
+    recurring         TEXT,                -- one-time / annual / ongoing
+    funding_value     REAL,
+    funding_type      TEXT,                -- grant / gift / sponsorship / in-kind / none
+    unc_poc           TEXT,
+    company_poc       TEXT,
+    source_url        TEXT,
+    verification_tier TEXT,                -- Verified / Reported / Inferred
+    verification_notes TEXT,
+    research_by       TEXT,
+    date_of_research  DATE
+);
 """
 
 
@@ -340,3 +398,146 @@ def count_edges_by_unit() -> list[tuple[str, int]]:
 def count_raw(table: str) -> int:
     with connection(read_only=True) as conn:
         return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+
+
+# ---------------------------------------------------------------------------
+# Partnership inventory upserts (Tiers 1-3 + evidence)
+# ---------------------------------------------------------------------------
+
+def upsert_partnership_unit(unit_id: str, parent_unit_id: str | None,
+                            unit_name: str, unit_type: str | None,
+                            description: str | None, focus_areas: str | None,
+                            disciplines: str | None, faculty_count: int | None,
+                            student_count: int | None, website_url: str | None,
+                            research_by: str | None, date_of_research: str | None,
+                            notes: str | None) -> None:
+    """Insert or update one row in unc_units. COALESCE keeps earlier non-null
+    enrichment when a later pass passes null (e.g. Tier 2 re-touching a parent)."""
+    sql = """
+        INSERT INTO unc_units
+            (unit_id, parent_unit_id, unit_name, unit_type, description,
+             focus_areas, disciplines, faculty_count, student_count, website_url,
+             research_by, date_of_research, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (unit_id) DO UPDATE SET
+            parent_unit_id   = COALESCE(excluded.parent_unit_id, unc_units.parent_unit_id),
+            unit_name        = excluded.unit_name,
+            unit_type        = COALESCE(excluded.unit_type, unc_units.unit_type),
+            description      = COALESCE(excluded.description, unc_units.description),
+            focus_areas      = COALESCE(excluded.focus_areas, unc_units.focus_areas),
+            disciplines      = COALESCE(excluded.disciplines, unc_units.disciplines),
+            faculty_count    = COALESCE(excluded.faculty_count, unc_units.faculty_count),
+            student_count    = COALESCE(excluded.student_count, unc_units.student_count),
+            website_url      = COALESCE(excluded.website_url, unc_units.website_url),
+            research_by      = excluded.research_by,
+            date_of_research = excluded.date_of_research,
+            notes            = COALESCE(excluded.notes, unc_units.notes)
+    """
+    with connection() as conn:
+        conn.execute(sql, [unit_id, parent_unit_id, unit_name, unit_type,
+                           description, focus_areas, disciplines, faculty_count,
+                           student_count, website_url, research_by,
+                           date_of_research, notes])
+
+
+def upsert_partnership_faculty(faculty_id: str, unit_id: str | None,
+                               full_name: str, title: str | None,
+                               profile_url: str | None, openalex_id: str | None,
+                               research_by: str | None,
+                               date_of_research: str | None) -> None:
+    """Insert or update one row in unc_faculty."""
+    sql = """
+        INSERT INTO unc_faculty
+            (faculty_id, unit_id, full_name, title, profile_url, openalex_id,
+             research_by, date_of_research)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (faculty_id) DO UPDATE SET
+            unit_id          = COALESCE(excluded.unit_id, unc_faculty.unit_id),
+            full_name        = excluded.full_name,
+            title            = COALESCE(excluded.title, unc_faculty.title),
+            profile_url      = COALESCE(excluded.profile_url, unc_faculty.profile_url),
+            openalex_id      = COALESCE(excluded.openalex_id, unc_faculty.openalex_id),
+            research_by      = excluded.research_by,
+            date_of_research = excluded.date_of_research
+    """
+    with connection() as conn:
+        conn.execute(sql, [faculty_id, unit_id, full_name, title, profile_url,
+                           openalex_id, research_by, date_of_research])
+
+
+def upsert_partnership(row: dict) -> None:
+    """Insert or update one partnership. `row` keys mirror unc_partnerships
+    columns; missing keys default to null. ON CONFLICT replaces so re-runs are
+    idempotent."""
+    sql = """
+        INSERT INTO unc_partnerships
+            (partnership_id, unit_id, faculty_id, area, company_name, description,
+             status, start_date, end_date, renewal_date, recurring, funding_value,
+             funding_type, unc_poc, company_poc, source_url, verification_tier,
+             verification_notes, research_by, date_of_research)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (partnership_id) DO UPDATE SET
+            unit_id            = excluded.unit_id,
+            faculty_id         = excluded.faculty_id,
+            area               = excluded.area,
+            company_name       = excluded.company_name,
+            description        = excluded.description,
+            status             = excluded.status,
+            start_date         = excluded.start_date,
+            end_date           = excluded.end_date,
+            renewal_date       = excluded.renewal_date,
+            recurring          = excluded.recurring,
+            funding_value      = excluded.funding_value,
+            funding_type       = excluded.funding_type,
+            unc_poc            = excluded.unc_poc,
+            company_poc        = excluded.company_poc,
+            source_url         = excluded.source_url,
+            verification_tier  = excluded.verification_tier,
+            verification_notes = excluded.verification_notes,
+            research_by        = excluded.research_by,
+            date_of_research   = excluded.date_of_research
+    """
+    with connection() as conn:
+        conn.execute(sql, [
+            row["partnership_id"], row.get("unit_id"), row.get("faculty_id"),
+            row.get("area"), row.get("company_name"), row.get("description"),
+            row.get("status"), row.get("start_date"), row.get("end_date"),
+            row.get("renewal_date"), row.get("recurring"), row.get("funding_value"),
+            row.get("funding_type"), row.get("unc_poc"), row.get("company_poc"),
+            row.get("source_url"), row.get("verification_tier"),
+            row.get("verification_notes"), row.get("research_by"),
+            row.get("date_of_research"),
+        ])
+
+
+# ---------------------------------------------------------------------------
+# Partnership inventory queries (used by export + API export)
+# ---------------------------------------------------------------------------
+
+def fetch_partnership_units() -> list[dict]:
+    """Return every unc_units row as a dict, ordered for the spreadsheet."""
+    order = ("CASE unit_type WHEN 'School' THEN 0 WHEN 'Department' THEN 1 "
+             "WHEN 'Institute' THEN 2 WHEN 'Center' THEN 3 WHEN 'Lab' THEN 4 "
+             "ELSE 5 END, unit_name")
+    with connection(read_only=True) as conn:
+        cur = conn.execute(f"SELECT * FROM unc_units ORDER BY {order}")
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def fetch_partnership_faculty() -> list[dict]:
+    """Return every unc_faculty row as a dict, ordered by name."""
+    with connection(read_only=True) as conn:
+        cur = conn.execute("SELECT * FROM unc_faculty ORDER BY full_name")
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def fetch_partnerships() -> list[dict]:
+    """Return every unc_partnerships row as a dict, ordered for the spreadsheet."""
+    with connection(read_only=True) as conn:
+        cur = conn.execute(
+            "SELECT * FROM unc_partnerships ORDER BY unit_id, area, company_name"
+        )
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
