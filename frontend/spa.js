@@ -89,9 +89,16 @@
       <span class="vs-more">How&nbsp;we&nbsp;verify →</span>
     </a>`;
   const loadingHTML = (label) => `<div class="loading"><div class="spinner"></div>${esc(label || "Loading…")}</div>`;
+  // content-shaped loading placeholders (perceived-speed > spinner)
+  const skeletonGrid = (n = 8) => `<div class="grid">${Array.from({ length: n }, () => `<div class="card sk-card"><div class="sk sk-line w55"></div><div class="sk sk-line w90"></div><div class="sk sk-line w35"></div></div>`).join("")}</div>`;
+  const skeletonTable = (n = 10) => `<div class="table-wrap sk-wrap">${Array.from({ length: n }, () => `<div class="sk-row"><div class="sk sk-line w30"></div><div class="sk sk-line w16"></div><div class="sk sk-line w44"></div><div class="sk sk-line w10"></div></div>`).join("")}</div>`;
   function errorHTML(err, ctx) { const f = friendlyError(err, ctx); return `<div class="error"><h3>${esc(f.title)}</h3><p>${esc(f.msg)}</p><p style="margin-top:14px"><button class="btn ghost" data-reload>Retry</button></p></div>`; }
   function emptyHTML(title, msg) { return `<div class="empty"><h3>${esc(title)}</h3><p>${esc(msg)}</p></div>`; }
   const enc = encodeURIComponent;
+  // recent searches (palette + future use), capped & deduped in localStorage
+  const RECENT_KEY = "iig_recent";
+  const recentList = () => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; } };
+  const pushRecent = (q) => { q = (q || "").trim(); if (!q) return; try { let l = recentList().filter((x) => x.toLowerCase() !== q.toLowerCase()); l.unshift(q); localStorage.setItem(RECENT_KEY, JSON.stringify(l.slice(0, 6))); } catch {} };
 
   // ── write helpers: edit/add/delete against the keyless write API ─────────────
   // Edit token: only required when the server has EDIT_TOKEN configured. We
@@ -423,6 +430,7 @@
 
   // ── view: SEARCH RESULTS ─────────────────────────────────────────────────────
   async function renderSearch(q) {
+    pushRecent(q);
     const v = elView();
     v.innerHTML = `<div class="page wrap">
       <form class="search-box" id="search-form" style="margin:0 0 24px">
@@ -524,7 +532,7 @@
         <select id="co-sort"><option value="records">Sort: Most records</option><option value="name">Sort: Name</option><option value="units">Sort: Most units</option></select>
         <span class="count" id="co-count"></span>
       </div>
-      <div id="co-body">${loadingHTML("Loading companies…")}</div>
+      <div id="co-body">${skeletonTable(12)}</div>
     </div>`;
 
     let g;
@@ -643,7 +651,7 @@
         <select id="u-sort"><option value="name">Sort: Name</option><option value="partnerships">Sort: Partnerships</option><option value="faculty">Sort: Faculty size</option></select>
         <span class="count" id="u-count"></span>
       </div>
-      <div id="u-grid">${loadingHTML("Loading units…")}</div>
+      <div id="u-grid">${skeletonTable(12)}</div>
     </div>`;
 
     let units;
@@ -886,7 +894,7 @@
         <button class="btn ghost" id="f-reset">Reset</button>
         <span class="count" id="p-count"></span>
       </div>
-      <div id="p-body">${loadingHTML("Loading partnerships…")}</div>
+      <div id="p-body">${skeletonTable(12)}</div>
     </div>`;
 
     let rows, unitOpts;
@@ -1024,7 +1032,7 @@
         <label style="font-size:13px;color:var(--muted)"><input type="checkbox" id="fac-partners" /> with partnerships only</label>
         <span class="count" id="fac-count"></span>
       </div>
-      <div id="fac-grid">${loadingHTML("Loading faculty…")}</div>
+      <div id="fac-grid">${skeletonGrid(9)}</div>
     </div>`;
 
     let fac;
@@ -1512,12 +1520,14 @@
       const q = input.value.trim();
       const comps = q ? rankCompanies(q, _cmdkCompanies, 6) : [];
       const pages = CMDK_PAGES.filter((p) => !q || p.label.toLowerCase().includes(q.toLowerCase()));
-      items = [...comps.map((c) => ({ kind: "company", c })), ...(q ? [{ kind: "topic", q }] : []), ...pages.map((p) => ({ kind: "page", p }))];
+      const recents = q ? [] : recentList().map((r) => ({ kind: "recent", q: r }));
+      items = [...recents, ...comps.map((c) => ({ kind: "company", c })), ...(q ? [{ kind: "topic", q }] : []), ...pages.map((p) => ({ kind: "page", p }))];
       active = 0;
       list.innerHTML = items.length ? items.map((it, i) => {
         const a = i === 0 ? " active" : "";
         if (it.kind === "company") return `<div class="cmdk-item${a}" data-i="${i}"><span class="cmdk-ic">◆</span><span class="cmdk-lbl">${esc(it.c.name)}</span><span class="cmdk-rt">${confBadge(it.c.confidence)} ${(it.c.total_edges || 0).toLocaleString()}</span></div>`;
         if (it.kind === "topic") return `<div class="cmdk-item${a}" data-i="${i}"><span class="cmdk-ic">⌕</span><span class="cmdk-lbl">Search “${esc(it.q)}” as a topic</span></div>`;
+        if (it.kind === "recent") return `<div class="cmdk-item${a}" data-i="${i}"><span class="cmdk-ic">↩</span><span class="cmdk-lbl">${esc(it.q)}</span><span class="cmdk-rt">recent</span></div>`;
         return `<div class="cmdk-item${a}" data-i="${i}"><span class="cmdk-ic">›</span><span class="cmdk-lbl">Go to ${esc(it.p.label)}</span></div>`;
       }).join("") : (q ? `<div class="cmdk-empty">No matches — press ↵ to search “${esc(q)}”</div>` : `<div class="cmdk-empty">Type a company name, a topic, or a page</div>`);
       if (!items.length && q) items = [{ kind: "topic", q }];
