@@ -11,6 +11,7 @@ Endpoints:
 """
 from __future__ import annotations
 import logging
+import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
@@ -28,9 +29,21 @@ app = FastAPI(
     version="0.1.0",
 )
 
+_ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get(
+        "ALLOWED_ORIGINS",
+        "https://institution-intelligence-graph.vercel.app,"
+        "https://map-omega-azure.vercel.app,"
+        "http://localhost:3000",
+    ).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["GET"],
     allow_headers=["*"],
 )

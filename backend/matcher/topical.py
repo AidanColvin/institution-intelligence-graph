@@ -24,14 +24,21 @@ def _tokenize(text: str) -> set[str]:
     return {t for t in text.split() if len(t) >= 3 and t not in _STOPWORDS}
 
 
+_UNIT_KEYWORDS: dict[str, set[str]] | None = None
+
+
 def _load_unit_keywords() -> dict[str, set[str]]:
+    global _UNIT_KEYWORDS
+    if _UNIT_KEYWORDS is not None:
+        return _UNIT_KEYWORDS
     sql = "SELECT unit_id, keywords FROM topic_profiles"
     with store.connection(read_only=True) as conn:
         rows = conn.execute(sql).fetchall()
-    return {
+    _UNIT_KEYWORDS = {
         uid: set(json.loads(kw) if isinstance(kw, str) else kw)
         for uid, kw in rows
     }
+    return _UNIT_KEYWORDS
 
 
 def score_company(company_name: str, sector_hint: str = "") -> list[dict[str, Any]]:

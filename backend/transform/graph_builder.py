@@ -76,8 +76,16 @@ def build_from_nih(record_id: str, source_url: str, raw: dict, fetched_at: str) 
     # Also try organization_type.name for school-level resolution
     org_type = (raw.get("organization_type") or {}).get("name", "") or ""
 
-    # Resolve to a UNC unit — prefer dept, then org_type (e.g. "SCHOOLS OF MEDICINE"), then root
-    unit_id = resolve_unc_unit(dept) or resolve_unc_unit(org_type) or "unc:root"
+    # Resolve to a UNC unit — prefer dept, then org_type (e.g. "SCHOOLS OF MEDICINE").
+    # Skip unresolved records instead of dumping them on unc:root, which would
+    # otherwise accumulate the most edges and corrupt every ranking.
+    unit_id = resolve_unc_unit(dept) or resolve_unc_unit(org_type)
+    if not unit_id:
+        logger.debug(
+            "graph_builder: unresolved dept=%r org_type=%r for grant %s, skipping",
+            dept, org_type, record_id,
+        )
+        return 0
 
     fiscal_year = str(raw.get("fiscal_year", "")) or None
     amount = _parse_amount(raw.get("award_amount"))
@@ -151,7 +159,13 @@ def build_from_nih(record_id: str, source_url: str, raw: dict, fetched_at: str) 
 def build_from_nsf(record_id: str, source_url: str, raw: dict, fetched_at: str) -> int:
     # NSF fundProgramName is a research program name (e.g. "STATISTICS"); map via aliases.
     dept = raw.get("fundProgramName", "") or ""
-    unit_id = resolve_unc_unit(dept) or "unc:root"
+    unit_id = resolve_unc_unit(dept)
+    if not unit_id:
+        logger.debug(
+            "graph_builder: unresolved program=%r for NSF award %s, skipping",
+            dept, record_id,
+        )
+        return 0
 
     amount = _parse_amount(raw.get("fundsObligatedAmt"))
     title = (raw.get("title", "") or "")[:500]
@@ -198,7 +212,13 @@ def build_from_nsf(record_id: str, source_url: str, raw: dict, fetched_at: str) 
 
 def build_from_usaspending(record_id: str, source_url: str, raw: dict, fetched_at: str) -> int:
     description = raw.get("description", "") or ""
-    unit_id = resolve_unc_unit(description) or "unc:root"
+    unit_id = resolve_unc_unit(description)
+    if not unit_id:
+        logger.debug(
+            "graph_builder: unresolved description=%r for USAspending award %s, skipping",
+            description, record_id,
+        )
+        return 0
     amount = _parse_amount(raw.get("total_obligated_amount"))
     start = (raw.get("start_date", "") or "")[:4] or None
     # Grants map to edge_type 'grant'; contracts to 'contract'
@@ -250,7 +270,13 @@ def build_from_clinical_trial(record_id: str, source_url: str, raw: dict, fetche
     affiliation = responsible.get("investigatorAffiliation", "") or responsible.get("affiliation", "")
     start = (protocol.get("statusModule", {}).get("startDateStruct", {}).get("date", "") or "")[:7]
 
-    unit_id = resolve_unc_unit(affiliation) or _route_trial_by_conditions(conditions) or "unc:root"
+    unit_id = resolve_unc_unit(affiliation) or _route_trial_by_conditions(conditions)
+    if not unit_id:
+        logger.debug(
+            "graph_builder: unresolved affiliation=%r for trial %s, skipping",
+            affiliation, record_id,
+        )
+        return 0
     title = (id_mod.get("briefTitle", "") or "")[:300]
     nct_id = id_mod.get("nctId", record_id)
 
@@ -335,7 +361,13 @@ def build_from_crossref(record_id: str, source_url: str, raw: dict, fetched_at: 
             continue
 
         dept_text = unc_affil.get("name", "")
-        unit_id = resolve_unc_unit(dept_text) or "unc:root"
+        unit_id = resolve_unc_unit(dept_text)
+        if not unit_id:
+            logger.debug(
+                "graph_builder: unresolved affiliation=%r for paper %s author, skipping",
+                dept_text, record_id,
+            )
+            continue
 
         given = author.get("given", "").strip()
         family = author.get("family", "").strip()
