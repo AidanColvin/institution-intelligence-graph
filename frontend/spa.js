@@ -88,6 +88,8 @@
       <span class="vs-check">✓</span> Source-verified — <b>SEC&nbsp;EDGAR</b> · <b>PubMed</b> · <b>ClinicalTrials.gov</b> · <b>UNC.edu</b>
       <span class="vs-more">How&nbsp;we&nbsp;verify →</span>
     </a>`;
+  // copy a shareable link to the current (filtered) view — wired globally in boot()
+  const copyLinkBtn = () => `<button class="btn ghost" data-copylink title="Copy a shareable link to this view">⧉ Copy link</button>`;
   const loadingHTML = (label) => `<div class="loading"><div class="spinner"></div>${esc(label || "Loading…")}</div>`;
   // content-shaped loading placeholders (perceived-speed > spinner)
   const skeletonGrid = (n = 8) => `<div class="grid">${Array.from({ length: n }, () => `<div class="card sk-card"><div class="sk sk-line w55"></div><div class="sk sk-line w90"></div><div class="sk sk-line w35"></div></div>`).join("")}</div>`;
@@ -533,9 +535,11 @@
       xRows = topical.map((t) => ({ unit: t.unit_name || t.unit_id, score: (t.score || 0).toFixed(3), keywords: (t.hits || []).join(", ") }));
       xCols = [{ label: "UNC Unit", key: "unit", w: 30 }, { label: "Match Score", key: "score", w: 12 }, { label: "Matched Keywords", key: "keywords", w: 50 }];
     }
-    if (xRows && xRows.length) html = `<div class="export-row">${exportButtons("s-exp")}</div>` + html;
+    if (xRows && xRows.length) html = `<div class="export-row">${copyLinkBtn()}${exportButtons("s-exp")}</div>` + html;
     out.innerHTML = html;
     if (xRows && xRows.length) wireExport("s-exp", () => ({ title: xTitle, filename: xTitle, columns: xCols, rows: xRows }));
+    // ↑/↓/↵ through result cards/units → open the unit
+    wireListNav("search-results", ".ev-unit, a.card", (el) => { const a = el.matches("a") ? el : el.querySelector("a[href]"); if (a) location.hash = a.getAttribute("href"); });
   }
 
   // ── view: COMPANIES INDEX (browse/sort/filter; shareable, keyboard-nav, expandable) ──
@@ -545,7 +549,7 @@
       <div class="page-head"><div class="card-top"><div><span class="eyebrow">Directory</span>
         <h1 class="page-title">Companies</h1>
         <p class="page-sub">Every external organisation linked to UNC by a public record. Filter and sort, then expand a row for the evidence — or open its full footprint. Use <kbd class="ikbd">↑</kbd><kbd class="ikbd">↓</kbd> + <kbd class="ikbd">↵</kbd>.</p></div>
-        <div class="head-actions">${exportButtons("co-exp")}</div></div></div>
+        <div class="head-actions">${copyLinkBtn()}${exportButtons("co-exp")}</div></div></div>
       ${coverageBar()}
       ${dataNote(COMPANY_NOTE)}
       <div class="toolbar">
@@ -930,7 +934,7 @@
       <div class="page-head"><div class="card-top"><div><span class="eyebrow">Inventory</span>
         <h1 class="page-title">UNC Partnerships</h1>
         <p class="page-sub">Every external partnership, linked to a UNC unit. ${CAN_EDIT ? "Click any cell to edit — changes save live. " : ""}The unit column pulls from the same master list as Schools &amp; Units.</p></div>
-        <div class="head-actions">${exportButtons("p-exp")}${CAN_EDIT ? '<button class="btn" id="p-add">＋ Add Partnership</button>' : ""}</div></div></div>
+        <div class="head-actions">${copyLinkBtn()}${exportButtons("p-exp")}${CAN_EDIT ? '<button class="btn" id="p-add">＋ Add Partnership</button>' : ""}</div></div></div>
       ${coverageBar()}
       ${dataNote(PARTNERSHIP_NOTE)}
       ${readOnlyNote()}
@@ -1076,7 +1080,7 @@
     v.innerHTML = `<div class="page wrap">
       <div class="page-head"><div class="card-top"><div><span class="eyebrow">Directory</span><h1 class="page-title">UNC Faculty</h1>
         <p class="page-sub">Researchers mapped to units through public grants, papers and trials. Filter by name; <kbd class="ikbd">↑</kbd><kbd class="ikbd">↓</kbd>+<kbd class="ikbd">↵</kbd> to open a profile.</p></div>
-        <div class="head-actions">${exportButtons("fac-exp")}</div></div></div>
+        <div class="head-actions">${copyLinkBtn()}${exportButtons("fac-exp")}</div></div></div>
       ${coverageBar()}
       <div class="toolbar">
         <input type="search" id="fac-search" placeholder="Filter by faculty name…" value="${esc(query.q || "")}" />
@@ -1655,6 +1659,12 @@
     // Delegated Retry handler (replaces an inline onclick so the CSP can forbid
     // inline script entirely).
     document.addEventListener("click", (e) => { if (e.target.closest("[data-reload]")) location.reload(); });
+    // copy a shareable link to the current view
+    document.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-copylink]"); if (!b) return;
+      try { await navigator.clipboard.writeText(location.href); toast("Link copied to clipboard"); }
+      catch { toast("Press ⌘C to copy the URL", "err"); }
+    });
 
     // ⌘K / Ctrl-K (or "/") opens the command palette; nav button opens it too.
     const isMac = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || "");
