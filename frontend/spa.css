@@ -432,4 +432,16 @@ select.es:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px
   .page-sub { font-size:15.5px; }
   table.data th { top:0; }
   .modal-form { grid-template-columns:1fr; }
+  /* stack the page title above its action buttons so the buttons get full
+     width and lay out in a row instead of wrapping mid-label */
+  .card-top { flex-direction:column; align-items:stretch; }
+  .head-actions, .export-row { justify-content:flex-start; }
+  .btn { white-space:nowrap; }
+  /* the Companies grid: drop the wide "Linked units" column — its richer
+     version lives in the expander, and dropping it kills the 160px tall rows */
+  .co-table .co-units { display:none; }
+  .co-table th, .co-table td { padding-left:11px; padding-right:11px; }
+  .co-table .co-exp-cell { width:22px; padding-left:6px; padding-right:4px; }
+  /* let the big editable spreadsheets scroll with momentum + a scroll hint */
+  .table-wrap { -webkit-overflow-scrolling:touch; }
 }

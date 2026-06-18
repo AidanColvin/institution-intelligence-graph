@@ -586,13 +586,13 @@
       return `<div class="co-ev"><p>${conf}</p>${units ? `<ul class="co-ev-units">${units}</ul>` : ""}<a class="src-link" href="#/search/${enc(c.name)}">View full footprint →</a></div>`;
     };
     const companyTable = (rows) => `<div class="table-wrap"><table class="data co-table">
-      <thead><tr><th aria-label="expand"></th><th>Company</th><th>Confidence</th><th>Records</th><th>Linked units</th></tr></thead>
+      <thead><tr><th aria-label="expand"></th><th>Company</th><th>Confidence</th><th>Records</th><th class="co-units">Linked units</th></tr></thead>
       <tbody>${rows.map((c) => `<tr class="co-row">
         <td class="co-exp-cell"><span class="co-chev">▸</span></td>
         <td><a href="#/search/${enc(c.name)}" class="co-name"><strong>${esc(c.name)}</strong></a></td>
         <td>${confBadge(c.confidence)}</td>
         <td>${(c.total_edges || 0).toLocaleString()}</td>
-        <td>${linkedUnits(c).map((n) => esc(n)).join(", ") || "—"}</td>
+        <td class="co-units">${linkedUnits(c).map((n) => esc(n)).join(", ") || "—"}</td>
       </tr>
       <tr class="co-detail" hidden><td></td><td colspan="4">${detailHTML(c)}</td></tr>`).join("")}</tbody></table></div>`;
 
