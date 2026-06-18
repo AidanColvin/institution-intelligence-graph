@@ -831,7 +831,7 @@
         <td>${esc(r.company_name || "")}</td>
         <td>${tierBadge(r.verification_tier)}</td>
         <td>${esc(fmtUSD(r.funding_value))}</td>
-        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener noreferrer">record ↗</a>` : ""}</td>
+        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener noreferrer">record ↗</a>` : ""}${r.pubmed_url ? ` <a class="pm-link" href="${esc(safeUrl(r.pubmed_url))}" target="_blank" rel="noopener noreferrer" title="Open in PubMed (verified)">PubMed ↗</a>` : ""}</td>
         <td>${esc(fmtDate(r.start_date || r.date_of_research))}</td>
       </tr>`).join("")}</tbody></table></div>`;
   }
@@ -923,6 +923,7 @@
       { label: "UNC POC", key: "unc_poc", w: 18 },
       { label: "Company POC", key: "company_poc", w: 18 },
       { label: "Source / Evidence", key: "source_url", w: 30 },
+      { label: "PubMed", key: "pubmed_url", w: 34 },
       { label: "Verified", key: "verification_tier", w: 11 },
       { label: "Research By", key: "research_by", w: 16 },
       { label: "Date", key: "date_of_research", w: 12 },
