@@ -81,6 +81,7 @@
     { src: "SEC EDGAR", what: "Company identity", detail: "All 84 SEC-matched companies' CIKs resolve to the named filer in SEC EDGAR (100%)." },
     { src: "ClinicalTrials.gov", what: "Company ↔ UNC links", detail: "All 307 companies and 664 clinical-trial partnerships confirmed — the company is a sponsor/collaborator and UNC is on the trial." },
     { src: "PubMed", what: "Publications", detail: "338 of 360 co-authored papers are PubMed-indexed (93%); the rest are real papers outside PubMed's scope (computer science, chemistry, materials)." },
+    { src: "NIH RePORTER · NSF · USAspending", what: "Federal research awards", detail: "5,068 federal grants/awards to UNC ($4.2B total), each with its agency, real award amount, dates and a canonical source link. NIH/NSF de-duplicated against USAspending so no award is double-counted. Shown as government funding, never as a company." },
     { src: "UNC official website", what: "Schools & units", detail: "159 unit profiles sourced from official UNC pages; every unit website link checked and fixed." },
   ];
   const verifiedStrip = () =>
@@ -172,7 +173,7 @@
   }
 
   // picklists (prompt-specified, plus any values already present in the data)
-  const AREA_OPTS = ["Events", "Scholarships", "Talent Pipeline", "Programs", "Research Grant", "Clinical Trial", "Co-authored Publication"];
+  const AREA_OPTS = ["Events", "Scholarships", "Talent Pipeline", "Programs", "Research Grant", "Clinical Trial", "Co-authored Publication", "Federal Research Award"];
   const STATUS_OPTS = ["Active", "Past", "In Discussion", "Lapsed"];
   const RECURRING_OPTS = ["", "one-time", "annual", "ongoing"];
   const FUNDING_TYPE_OPTS = ["", "grant", "gift", "sponsorship", "in-kind", "none"];
@@ -653,9 +654,10 @@
   // public records, so be explicit about what each row actually is.
   const dataNote = (html) => `<div class="data-note"><span class="dn-i">ⓘ</span><span>${html}</span></div>`;
   const PARTNERSHIP_NOTE =
-    "Auto-compiled from public records — these are <b>evidence links, not confirmed business partnerships</b>, and no funding figures are implied. Open each row's source to verify it. " +
+    "Auto-compiled from public records — open each row's source to verify it. " +
     "<b>Clinical Trial</b> (tier <i>Verified</i>) = the company is a sponsor/collaborator on a ClinicalTrials.gov study UNC ran. " +
-    "<b>Co-authored Publication</b> (tier <i>Reported</i>) = a UNC researcher co-authored a paper with a company-affiliated author.";
+    "<b>Co-authored Publication</b> (tier <i>Reported</i>) = a UNC researcher co-authored a paper with a company-affiliated author; these carry no funding figure. " +
+    "<b>Federal Research Award</b> (tier <i>Verified</i>) = a grant/award from a U.S. federal agency (NIH, NSF, DoD, DoE, CDC…) <i>to UNC</i>, with the real award amount — this is government funding, <b>not</b> a company partnership.";
   const COMPANY_NOTE =
     "Auto-matched from public records, then source-checked. <b>confirmed</b> = matched a unique SEC filer (CIK); <b>probable</b> = matched by name (no SEC CIK) — but each is linked to UNC by public clinical-trial records you can open in its footprint.";
 
@@ -998,6 +1000,7 @@
       { label: "Date", key: "date_of_research", w: 12 },
     ];
 
+    const RENDER_CAP = 500;   // keep the DOM light; full set stays searchable + exportable
     const draw = () => {
       const q = ($("#f-q").value || "").toLowerCase();
       const area = $("#f-area").value, status = $("#f-status").value, tier = $("#f-tier").value;
@@ -1005,8 +1008,10 @@
         (!area || r.area === area) && (!status || r.status === status) && (!tier || r.verification_tier === tier) &&
         (!q || (r.company_name || "").toLowerCase().includes(q) || (r.unit_name || "").toLowerCase().includes(q)));
       lastRows = filtered;
-      $("#p-count").textContent = `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} partnerships`;
-      $("#p-body").innerHTML = filtered.length ? (CAN_EDIT ? editPartnershipTable(filtered, unitOpts) : partnershipTable(filtered))
+      const shown = filtered.slice(0, RENDER_CAP);
+      const cap = filtered.length > RENDER_CAP ? ` · showing first ${RENDER_CAP.toLocaleString()} — refine with search or filters, or export for all` : "";
+      $("#p-count").textContent = `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} partnerships${cap}`;
+      $("#p-body").innerHTML = filtered.length ? (CAN_EDIT ? editPartnershipTable(shown, unitOpts) : partnershipTable(shown))
         : emptyHTML("No partnerships match", rows.length ? "Loosen the filters to see more." : (CAN_EDIT ? "Add one to get started — click ＋ Add Partnership." : "No partnerships in this view."), rows.length ? ["f-q", "f-area", "f-status", "f-tier"] : null);
       syncQuery("partnerships", { q: $("#f-q").value.trim(), area, status, tier });
     };
