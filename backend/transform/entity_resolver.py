@@ -60,7 +60,18 @@ def _load_org_tree() -> tuple[dict, dict]:
 
 
 def _load_overrides() -> dict:
-    return json.loads(_OVERRIDES_PATH.read_text())
+    try:
+        return json.loads(_OVERRIDES_PATH.read_text())
+    except FileNotFoundError:
+        logger.warning(
+            "entity_resolver: company_overrides.json not found at %s, "
+            "using empty overrides",
+            _OVERRIDES_PATH,
+        )
+        return {}
+    except Exception as e:
+        logger.error("entity_resolver: failed to load company_overrides: %s", e)
+        return {}
 
 
 _ORG_TREE, _ALIAS_INDEX = _load_org_tree()
