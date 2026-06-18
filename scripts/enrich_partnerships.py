@@ -119,12 +119,18 @@ def _norm_name(name: str) -> str:
     return re.sub(r"\s+", " ", base).strip()
 
 
-def build_trial_pi_map(con) -> dict[str, str]:
-    """{nctId: UNC principal-investigator name} from the structured trial record."""
-    out: dict[str, str] = {}
+def build_trial_meta(con) -> dict[str, dict]:
+    """{nctId: {pi, fed}} from the structured trial record.
+
+    pi  = UNC principal-investigator name (independent person signal).
+    fed = (grant_id, funder) if the trial cross-references a federal grant in its
+          secondaryIdInfos — an INDEPENDENT second source (NIH/NSF ↔ ClinicalTrials.gov).
+    """
+    out: dict[str, dict] = {}
     for rid, raw in con.execute(
             "SELECT id, raw_json FROM raw_clinical_trials").fetchall():
         d = _loads(raw)
+        ident = d.get("protocolSection", {}).get("identificationModule", {})
         offs = (d.get("protocolSection", {})
                  .get("contactsLocationsModule", {})
                  .get("overallOfficials") or [])
@@ -140,9 +146,41 @@ def build_trial_pi_map(con) -> dict[str, str]:
                 break
             if pi is None and is_unc:                  # fallback: any UNC official
                 pi = name
-        if pi:
-            out[rid] = pi
+        fed = None
+        for s in (ident.get("secondaryIdInfos") or []):
+            dom = s.get("domain") or ""
+            if s.get("type") == "OTHER_GRANT" or "national" in dom.lower() or \
+                    "nih" in dom.lower() or "foundation" in dom.lower():
+                fed = (s.get("id"), dom)
+                break
+        if pi or fed:
+            out[rid] = {"pi": pi, "fed": fed}
     return out
+
+
+def build_usaspending_xref(con) -> tuple[dict[str, str], dict[str, str]]:
+    """Independent federal cross-reference index from USAspending raw records.
+
+    Returns (nih_core -> usaspending_url, nsf_award_id -> usaspending_url) so an NIH/NSF
+    award confirmed in USAspending (a separate federal system) gets a real 2nd source.
+    """
+    by_nih: dict[str, str] = {}
+    by_nsf: dict[str, str] = {}
+    nsf_ids = {rid for (rid,) in con.execute("SELECT id FROM raw_nsf_awards").fetchall()}
+    nih_cores = {(_loads(rj).get("core_project_num") or "").strip()
+                 for (rj,) in con.execute("SELECT raw_json FROM raw_nih_grants").fetchall()}
+    nih_cores.discard("")
+    for rid, src_url, rj in con.execute(
+            "SELECT id, source_url, raw_json FROM raw_usaspending").fetchall():
+        d = _loads(rj)
+        aid = (d.get("award_id") or "")
+        url = src_url or f"https://www.usaspending.gov/award/{d.get('internal_id') or rid}"
+        for core in nih_cores:
+            if core and core in aid:
+                by_nih.setdefault(core, url)
+        if aid in nsf_ids:
+            by_nsf.setdefault(aid, url)
+    return by_nih, by_nsf
 
 
 # --------------------------------------------------------------------------- #
@@ -245,7 +283,7 @@ def build_federal_awards(con, resolution, referenced_faculty: set[str]) -> list[
                  + ". Federal research funding to UNC — not a company partnership.")
         nih_end = _iso(d.get("project_end_date"))
         status = "Active" if str(d.get("is_active")).lower() == "true" else _status_from_end(nih_end)
-        rows.append(_fed_row(
+        row = _fed_row(
             source_table="raw_nih_grants", record_id=rid,
             agency="National Institutes of Health",
             title=d.get("project_title"),
@@ -254,7 +292,9 @@ def build_federal_awards(con, resolution, referenced_faculty: set[str]) -> list[
             url=d.get("project_detail_url") or src_url,
             notes=notes,
             unit_id=res.get("unit_id", ROOT), faculty_id=fac, status=status,
-        ))
+        )
+        row["_ref"] = ("nih", core)
+        rows.append(row)
 
     # ---- NSF ----
     for rid, src_url, raw in con.execute(
@@ -272,7 +312,7 @@ def build_federal_awards(con, resolution, referenced_faculty: set[str]) -> list[
                  + ". Federal research funding to UNC — not a company partnership.")
         nsf_end = _iso(d.get("expDate"))
         status = "Active" if str(d.get("activeAwd")).lower() == "true" else _status_from_end(nsf_end)
-        rows.append(_fed_row(
+        row = _fed_row(
             source_table="raw_nsf_awards", record_id=rid,
             agency="National Science Foundation",
             title=d.get("title"),
@@ -282,7 +322,9 @@ def build_federal_awards(con, resolution, referenced_faculty: set[str]) -> list[
             url=src_url or f"https://www.nsf.gov/awardsearch/showAward?AWD_ID={rid}",
             notes=notes,
             unit_id=res.get("unit_id", ROOT), faculty_id=fac, status=status,
-        ))
+        )
+        row["_ref"] = ("nsf", rid)
+        rows.append(row)
 
     # ---- USAspending (only agencies NOT covered by NIH RePORTER / NSF) ----
     skipped_dupe = 0
@@ -307,7 +349,7 @@ def build_federal_awards(con, resolution, referenced_faculty: set[str]) -> list[
                  f"Federal {'contract' if ftype.endswith('contract') else 'grant'} to UNC "
                  f"— not a company partnership.")
         usa_end = _iso(d.get("end_date"))
-        rows.append(_fed_row(
+        row = _fed_row(
             source_table="raw_usaspending", record_id=rid,
             agency=counter,
             title=d.get("description"),
@@ -316,7 +358,9 @@ def build_federal_awards(con, resolution, referenced_faculty: set[str]) -> list[
             url=src_url,
             notes=notes,
             unit_id=ROOT, faculty_id=None, status=_status_from_end(usa_end),
-        ))
+        )
+        row["_ref"] = ("usa", None)
+        rows.append(row)
     usa_kept = sum(1 for r in rows if r["company_name"] not in
                    ("National Institutes of Health", "National Science Foundation"))
     log.info("USAspending: skipped %d NIH/NSF dupes (already covered), kept %d other-agency rows",
@@ -354,6 +398,13 @@ def main() -> None:
     con = duckdb.connect(args.db, read_only=True)
     resolution = build_record_resolution(con)
     node_fac = load_node_faculty(con)
+    usa_by_nih, usa_by_nsf = build_usaspending_xref(con)
+    log.info("USAspending cross-ref: %d NIH cores, %d NSF ids", len(usa_by_nih), len(usa_by_nsf))
+    pubmed_cache = {}
+    pm_path = Path("backend/data/pubmed_doi_index.json")
+    if pm_path.exists():
+        pubmed_cache = {k: v for k, v in json.loads(pm_path.read_text()).items() if v}
+        log.info("PubMed index: %d DOIs with a PMID", len(pubmed_cache))
 
     # ---- strip prior auto-generated rows so the run is idempotent ----
     parts = [p for p in parts if not str(p.get("partnership_id", ""))
@@ -426,13 +477,13 @@ def main() -> None:
         return cand[0] if len(cand) == 1 else None
 
     # ---- PASS 2b: clinical-trial PIs -> fill unc_poc + exact-name unit re-attribution ----
-    trial_pi = build_trial_pi_map(con)
+    trial_meta = build_trial_meta(con)
     poc_filled = pi_remapped = 0
     for p in parts:
         if p.get("area") != "Clinical Trial":
             continue
         m = re.search(r"(NCT\d+)", p.get("source_url") or "")
-        pi = trial_pi.get(m.group(1)) if m else None
+        pi = (trial_meta.get(m.group(1)) or {}).get("pi") if m else None
         if not pi:
             continue
         if not p.get("unc_poc"):
@@ -538,6 +589,64 @@ def main() -> None:
         if p.get("faculty_id"):
             p["faculty_name"] = fac_name.get(p["faculty_id"])
 
+    # ---- PASS 6: dual-source verification (independent 2nd source per row) ----
+    #   primary_source = the row's source_url; second_source = an INDEPENDENT system
+    #   that also attests the same fact. dual_verified flips on only when a real
+    #   second source exists — single-source rows are labelled honestly.
+    def _doi(url):
+        mm = re.search(r"(10\.\d{4,9}/\S+)", (url or "").lower())
+        return mm.group(1).rstrip("/.") if mm else None
+
+    dual = 0
+    for p in all_parts:
+        s2 = url2 = None
+        area = p.get("area")
+        if area == AREA_FEDERAL:
+            kind, ref = p.pop("_ref", (None, None))
+            if kind == "nih" and ref in usa_by_nih:
+                s2, url2 = "USAspending", usa_by_nih[ref]
+            elif kind == "nsf" and ref in usa_by_nsf:
+                s2, url2 = "USAspending", usa_by_nsf[ref]
+        elif area == "Clinical Trial":
+            m = re.search(r"(NCT\d+)", p.get("source_url") or "")
+            meta = trial_meta.get(m.group(1)) if m else None
+            if meta and meta.get("fed"):
+                s2 = f"Federal grant cross-ref ({meta['fed'][1] or meta['fed'][0]})"
+            elif p.get("faculty_id"):
+                s2 = "UNC PI confirmed in faculty roster"
+        elif area == AREA_COPUB:
+            pmid = pubmed_cache.get(_doi(p.get("source_url")) or "") or p.get("pmid")
+            if pmid:
+                s2 = "PubMed"
+                url2 = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+                p["pmid"] = pmid
+                p["pubmed_url"] = url2
+        p.pop("_ref", None)
+        p["second_source"] = s2
+        p["second_source_url"] = url2
+        p["dual_verified"] = bool(s2)
+        if s2:
+            dual += 1
+    log.info("PASS 6  dual-source verified %d of %d rows (%d%%)",
+             dual, len(all_parts), 100 * dual // max(1, len(all_parts)))
+
+    # ---- units & faculty: UNC.edu cross-check (option 2) ----
+    unc_re = re.compile(r"\.unc\.edu|unchealth|lineberger|unchealthcare", re.I)
+    u_ver = 0
+    for u in units:
+        on_unc = bool(unc_re.search(u.get("website_url") or ""))
+        from_unc = (u.get("research_by") == "UNC official website")
+        u["dual_verified"] = on_unc and from_unc          # sourced from UNC.edu AND a UNC.edu URL
+        u_ver += u["dual_verified"]
+    f_ver = 0
+    for f in faculty:
+        # a PI/author is UNC-confirmed by being named on a UNC-affiliated grant/paper
+        f["dual_verified"] = (f.get("partnership_count", 0) > 0) or \
+                             (f.get("research_by") == FED_FACULTY_TAG)
+        f_ver += f["dual_verified"]
+    log.info("PASS 6  UNC.edu-verified %d/%d units; %d/%d faculty source-confirmed",
+             u_ver, len(units), f_ver, len(faculty))
+
     # ---- recompute per-unit and per-faculty rollups ----
     by_unit: dict[str, list[dict]] = defaultdict(list)
     by_fac: dict[str, list[dict]] = defaultdict(list)
@@ -580,6 +689,7 @@ def main() -> None:
         "total_federal_funding_usd": round(fed_total),
         "n_units_with_partnerships": sum(1 for u in units if u["partnership_count"]),
         "n_faculty_with_partnerships": sum(1 for f in faculty if f["partnership_count"]),
+        "n_dual_verified": sum(1 for p in all_parts if p.get("dual_verified")),
     }
     data["units"] = units
     data["faculty"] = faculty

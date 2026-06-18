@@ -248,10 +248,12 @@ a.card:hover, button.card:hover { transform:translateY(-3px); box-shadow:var(--s
   padding:4px 10px; border-radius:var(--r-pill); text-transform:lowercase; }
 .badge::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; opacity:.9; }
 .badge[title] { cursor:help; }
-.src-link .pm-link { margin-left:8px; color:var(--accent-strong); font-weight:600; }
+.src-link .pm-link, .src-link .src2-link { margin-left:8px; color:var(--accent-strong); font-weight:600; }
 .badge.confirmed, .badge.Verified { background:var(--accent-soft); color:var(--accent-strong); }
 .badge.probable, .badge.Reported { background:#fbf4e2; color:var(--probable); }
 .badge.Inferred { background:var(--surface); color:var(--inferred); }
+.badge.dual { background:#e3f6e9; color:#0f7a3d; text-transform:none; }
+.badge.dual::before { display:none; }
 
 /* ── toolbar/filters ─────────────────────────────────────────────── */
 .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:20px; }

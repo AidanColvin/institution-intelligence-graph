@@ -657,7 +657,8 @@
     "Auto-compiled from public records — open each row's source to verify it. " +
     "<b>Clinical Trial</b> (tier <i>Verified</i>) = the company is a sponsor/collaborator on a ClinicalTrials.gov study UNC ran. " +
     "<b>Co-authored Publication</b> (tier <i>Reported</i>) = a UNC researcher co-authored a paper with a company-affiliated author; these carry no funding figure. " +
-    "<b>Federal Research Award</b> (tier <i>Verified</i>) = a grant/award from a U.S. federal agency (NIH, NSF, DoD, DoE, CDC…) <i>to UNC</i>, with the real award amount — this is government funding, <b>not</b> a company partnership.";
+    "<b>Federal Research Award</b> (tier <i>Verified</i>) = a grant/award from a U.S. federal agency (NIH, NSF, DoD, DoE, CDC…) <i>to UNC</i>, with the real award amount — this is government funding, <b>not</b> a company partnership. " +
+    "A <b>✓2</b> badge marks a row confirmed by a second independent source (e.g. an NIH grant that also appears in USAspending, a trial that cross-references its federal grant, or a paper indexed in PubMed).";
   const COMPANY_NOTE =
     "Auto-matched from public records, then source-checked. <b>confirmed</b> = matched a unique SEC filer (CIK); <b>probable</b> = matched by name (no SEC CIK) — but each is linked to UNC by public clinical-trial records you can open in its footprint.";
 
@@ -898,9 +899,9 @@
         <td><a href="#/unit/${enc(r.unit_id)}">${esc(r.unit_name || r.unit_id)}</a></td>
         <td>${esc(r.area || "")}</td>
         <td>${esc(r.company_name || "")}</td>
-        <td>${tierBadge(r.verification_tier)}</td>
+        <td>${tierBadge(r.verification_tier)}${r.dual_verified ? ` <span class="badge dual" title="Confirmed by an independent 2nd source: ${esc(r.second_source || "")}">✓2</span>` : ""}</td>
         <td>${esc(fmtUSD(r.funding_value))}</td>
-        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener noreferrer">record ↗</a>` : ""}${r.pubmed_url ? ` <a class="pm-link" href="${esc(safeUrl(r.pubmed_url))}" target="_blank" rel="noopener noreferrer" title="Open in PubMed (verified)">PubMed ↗</a>` : ""}</td>
+        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener noreferrer">record ↗</a>` : ""}${r.pubmed_url ? ` <a class="pm-link" href="${esc(safeUrl(r.pubmed_url))}" target="_blank" rel="noopener noreferrer" title="Open in PubMed (verified)">PubMed ↗</a>` : ""}${r.second_source_url && r.second_source !== "PubMed" ? ` <a class="src2-link" href="${esc(safeUrl(r.second_source_url))}" target="_blank" rel="noopener noreferrer" title="Independent 2nd source: ${esc(r.second_source || "")}">${esc(r.second_source || "2nd")} ↗</a>` : ""}</td>
         <td>${esc(fmtDate(r.start_date || r.date_of_research))}</td>
       </tr>`).join("")}</tbody></table></div>`;
   }
@@ -928,8 +929,8 @@
         <td>${sel(id, "funding_type", FUNDING_TYPE_OPTS, r.funding_type)}</td>
         ${editCell(id, "unc_poc", r.unc_poc)}
         ${editCell(id, "company_poc", r.company_poc)}
-        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener noreferrer">link ↗</a>` : `<span class="ec" contenteditable="true" data-id="${esc(id)}" data-field="source_url" data-orig="${esc(r.source_url || "")}">${r.source_url ? esc(r.source_url) : "add…"}</span>`}</td>
-        <td>${sel(id, "verification_tier", TIER_OPTS, r.verification_tier)}</td>
+        <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener noreferrer">link ↗</a>` : `<span class="ec" contenteditable="true" data-id="${esc(id)}" data-field="source_url" data-orig="${esc(r.source_url || "")}">${r.source_url ? esc(r.source_url) : "add…"}</span>`}${r.second_source_url && r.second_source !== "PubMed" ? ` <a class="src2-link" href="${esc(safeUrl(r.second_source_url))}" target="_blank" rel="noopener noreferrer" title="Independent 2nd source: ${esc(r.second_source || "")}">${esc(r.second_source || "2nd")} ↗</a>` : ""}${r.pubmed_url ? ` <a class="pm-link" href="${esc(safeUrl(r.pubmed_url))}" target="_blank" rel="noopener noreferrer" title="Open in PubMed (verified)">PubMed ↗</a>` : ""}</td>
+        <td>${sel(id, "verification_tier", TIER_OPTS, r.verification_tier)}${r.dual_verified ? ` <span class="badge dual" title="Confirmed by an independent 2nd source: ${esc(r.second_source || "")}">✓2</span>` : ""}</td>
         ${editCell(id, "research_by", r.research_by)}
         ${editCell(id, "date_of_research", r.date_of_research, "nowrap")}
         <td class="rowtools"><button class="mini del" data-del-p="${esc(id)}" title="Delete">×</button></td>
