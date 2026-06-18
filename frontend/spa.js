@@ -108,7 +108,7 @@
   }
 
   // picklists (prompt-specified, plus any values already present in the data)
-  const AREA_OPTS = ["Events", "Scholarships", "Talent Pipeline", "Programs", "Research Grant", "Clinical Trial"];
+  const AREA_OPTS = ["Events", "Scholarships", "Talent Pipeline", "Programs", "Research Grant", "Clinical Trial", "Co-authored Publication"];
   const STATUS_OPTS = ["Active", "Past", "In Discussion", "Lapsed"];
   const RECURRING_OPTS = ["", "one-time", "annual", "ongoing"];
   const FUNDING_TYPE_OPTS = ["", "grant", "gift", "sponsorship", "in-kind", "none"];
@@ -488,6 +488,7 @@
         <p class="page-sub">Every external organisation linked to UNC by a public record. Filter and sort, then open one to see its full footprint.</p></div>
         <div class="head-actions">${exportButtons("co-exp")}</div></div></div>
       ${coverageBar()}
+      ${dataNote(COMPANY_NOTE)}
       <div class="toolbar">
         <input type="search" id="co-q" placeholder="Filter companies by name…" />
         <select id="co-conf"><option value="">All confidence</option><option value="confirmed">Confirmed</option><option value="probable">Probable</option></select>
@@ -551,6 +552,16 @@
   }
   const readOnlyNote = () => CAN_EDIT ? "" :
     `<div class="ro-note">Viewing published data — editing is disabled on this deployment.</div>`;
+
+  // "how to read this" provenance note — these tables are auto-compiled from
+  // public records, so be explicit about what each row actually is.
+  const dataNote = (html) => `<div class="data-note"><span class="dn-i">ⓘ</span><span>${html}</span></div>`;
+  const PARTNERSHIP_NOTE =
+    "Auto-compiled from public records — these are <b>evidence links, not confirmed business partnerships</b>, and no funding figures are implied. Open each row's source to verify it. " +
+    "<b>Clinical Trial</b> (tier <i>Verified</i>) = the company is a sponsor/collaborator on a ClinicalTrials.gov study UNC ran. " +
+    "<b>Co-authored Publication</b> (tier <i>Reported</i>) = a UNC researcher co-authored a paper with a company-affiliated author.";
+  const COMPANY_NOTE =
+    "Auto-matched from public records. <b>confirmed</b> = matched a unique SEC filer (CIK); <b>probable</b> = name match only — treat as a lead and verify via the company's footprint.";
 
   // editable cell: contenteditable text that PUTs on blur when changed (or a
   // plain read-only cell when editing is disabled)
@@ -836,6 +847,7 @@
         <p class="page-sub">Every external partnership, linked to a UNC unit. ${CAN_EDIT ? "Click any cell to edit — changes save live. " : ""}The unit column pulls from the same master list as Schools &amp; Units.</p></div>
         <div class="head-actions">${exportButtons("p-exp")}${CAN_EDIT ? '<button class="btn" id="p-add">＋ Add Partnership</button>' : ""}</div></div></div>
       ${coverageBar()}
+      ${dataNote(PARTNERSHIP_NOTE)}
       ${readOnlyNote()}
       <div class="toolbar">
         <input type="search" id="f-q" placeholder="Search company or unit…" />
