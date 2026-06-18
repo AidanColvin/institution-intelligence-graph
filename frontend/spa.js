@@ -561,7 +561,7 @@
     "<b>Clinical Trial</b> (tier <i>Verified</i>) = the company is a sponsor/collaborator on a ClinicalTrials.gov study UNC ran. " +
     "<b>Co-authored Publication</b> (tier <i>Reported</i>) = a UNC researcher co-authored a paper with a company-affiliated author.";
   const COMPANY_NOTE =
-    "Auto-matched from public records. <b>confirmed</b> = matched a unique SEC filer (CIK); <b>probable</b> = name match only — treat as a lead and verify via the company's footprint.";
+    "Auto-matched from public records, then source-checked. <b>confirmed</b> = matched a unique SEC filer (CIK); <b>probable</b> = matched by name (no SEC CIK) — but each is linked to UNC by public clinical-trial records you can open in its footprint.";
 
   // editable cell: contenteditable text that PUTs on blur when changed (or a
   // plain read-only cell when editing is disabled)
