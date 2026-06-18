@@ -247,6 +247,88 @@
   // re-enters #/network can supersede a still-loading render (prevents stacking
   // two ForceGraph3D instances on the same #graph-3d node).
   let NET_TOKEN = 0, NET_ABORT = null;
+
+  // ── shared graph cache (companies+units), reused by Network, the company index
+  //    and search autocomplete so /api/graph is fetched at most once. ──
+  let GRAPH_CACHE = null, GRAPH_INFLIGHT = null;
+  async function getGraph() {
+    if (GRAPH_CACHE) return GRAPH_CACHE;
+    if (!GRAPH_INFLIGHT) {
+      GRAPH_INFLIGHT = api("/api/graph", { timeoutMs: 20000 })
+        .then((d) => { GRAPH_CACHE = d; GRAPH_INFLIGHT = null; return d; })
+        .catch((e) => { GRAPH_INFLIGHT = null; throw e; });
+    }
+    return GRAPH_INFLIGHT;
+  }
+
+  // fuzzy/typo-tolerant company ranking (no deps): exact > prefix > substring >
+  // in-order subsequence; ties broken by record volume.
+  function subseqGaps(q, name) {
+    let i = 0, gaps = 0, last = -1;
+    for (let j = 0; j < name.length && i < q.length; j++) {
+      if (name[j] === q[i]) { if (last >= 0) gaps += j - last - 1; last = j; i++; }
+    }
+    return i === q.length ? gaps : null;
+  }
+  function rankCompanies(query, companies, limit = 8) {
+    const q = (query || "").toLowerCase().trim();
+    if (!q || !companies) return [];
+    const out = [];
+    for (const c of companies) {
+      const name = (c.name || "").toLowerCase();
+      if (!name) continue;
+      let score = 0;
+      if (name === q) score = 1000;
+      else if (name.startsWith(q)) score = 600 - name.length;
+      else { const idx = name.indexOf(q); if (idx >= 0) score = 400 - idx - name.length * 0.1;
+        else if (q.length >= 3) { const g = subseqGaps(q, name); if (g != null) score = 150 - g; } }
+      if (score > 0) out.push({ c, score: score + Math.min(c.total_edges || 0, 60) * 0.4 });
+    }
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, limit).map((x) => x.c);
+  }
+
+  // Attach a type-ahead dropdown to a search <input>. Company list is lazy-loaded
+  // from the cached graph on first focus. Enter/click on a company → its footprint;
+  // a "Search '<q>'" row always lets topics through.
+  function attachAutocomplete(input) {
+    if (!input) return;
+    let companies = null, loading = false, items = [], active = -1, box = null;
+    const wrap = input.closest(".search-box") || input.parentElement;
+    if (wrap && getComputedStyle(wrap).position === "static") wrap.style.position = "relative";
+    const close = () => { if (box) { box.remove(); box = null; } active = -1; };
+    const go = (q) => { const s = (q || "").trim(); if (s) { close(); location.hash = "#/search/" + enc(s); } };
+    const render = () => {
+      const q = input.value.trim();
+      const matches = rankCompanies(q, companies);
+      items = matches.map((c) => ({ kind: "company", c })).concat(q ? [{ kind: "query", q }] : []);
+      if (!items.length) { close(); return; }
+      if (!box) { box = document.createElement("div"); box.className = "ac-box"; wrap.appendChild(box); }
+      active = -1;
+      box.innerHTML = items.map((it, i) => it.kind === "company"
+        ? `<div class="ac-item" data-i="${i}"><span class="ac-name">${esc(it.c.name)}</span><span class="ac-meta"><span class="badge ${esc(it.c.confidence || "probable")}">${esc(it.c.confidence || "probable")}</span> ${(it.c.total_edges || 0).toLocaleString()} records</span></div>`
+        : `<div class="ac-item ac-query" data-i="${i}">Search “<b>${esc(it.q)}</b>” as a topic →</div>`).join("");
+      box.querySelectorAll(".ac-item").forEach((el) => {
+        el.addEventListener("mousedown", (e) => { e.preventDefault(); const it = items[+el.dataset.i]; go(it.kind === "company" ? it.c.name : it.q); });
+      });
+    };
+    const move = (d) => { if (!box) return; const els = box.querySelectorAll(".ac-item"); if (!els.length) return; active = (active + d + els.length) % els.length; els.forEach((el, i) => el.classList.toggle("active", i === active)); };
+    const ensureLoaded = () => {
+      if (companies !== null || loading) return;
+      loading = true;
+      getGraph().then((g) => { companies = g.companies || []; render(); }).catch(() => { companies = []; });
+    };
+    input.addEventListener("focus", () => { ensureLoaded(); if (companies) render(); });
+    input.addEventListener("input", () => { ensureLoaded(); render(); });
+    input.addEventListener("keydown", (e) => {
+      if (!box) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+      else if (e.key === "Enter" && active >= 0) { e.preventDefault(); const it = items[active]; go(it.kind === "company" ? it.c.name : it.q); }
+      else if (e.key === "Escape") close();
+    });
+    input.addEventListener("blur", () => setTimeout(close, 120));
+  }
   function coverageBar() {
     if (!FRESHNESS) return "";
     const c = FRESHNESS.counts || {};
@@ -295,6 +377,7 @@
       const q = $("#q").value.trim();
       if (q) location.hash = "#/search/" + enc(q);
     });
+    attachAutocomplete($("#q"));
 
     try {
       const s = await api("/stats");
@@ -322,6 +405,7 @@
       <div id="search-results">${loadingHTML("Querying the research graph…")}</div>
     </div>`;
     $("#search-form").addEventListener("submit", (e) => { e.preventDefault(); const nq = $("#q").value.trim(); if (nq) location.hash = "#/search/" + enc(nq); });
+    attachAutocomplete($("#q"));
 
     const out = $("#search-results");
     let data;
@@ -395,17 +479,95 @@
     if (xRows && xRows.length) wireExport("s-exp", () => ({ title: xTitle, filename: xTitle, columns: xCols, rows: xRows }));
   }
 
+  // ── view: COMPANIES INDEX (browse/sort/filter all linked companies) ───────────
+  async function renderCompanies() {
+    const v = elView();
+    v.innerHTML = `<div class="page wrap">
+      <div class="page-head"><div class="card-top"><div><span class="eyebrow">Directory</span>
+        <h1 class="page-title">Companies</h1>
+        <p class="page-sub">Every external organisation linked to UNC by a public record. Filter and sort, then open one to see its full footprint.</p></div>
+        <div class="head-actions">${exportButtons("co-exp")}</div></div></div>
+      ${coverageBar()}
+      <div class="toolbar">
+        <input type="search" id="co-q" placeholder="Filter companies by name…" />
+        <select id="co-conf"><option value="">All confidence</option><option value="confirmed">Confirmed</option><option value="probable">Probable</option></select>
+        <select id="co-sort"><option value="records">Sort: Most records</option><option value="name">Sort: Name</option><option value="units">Sort: Most units</option></select>
+        <span class="count" id="co-count"></span>
+      </div>
+      <div id="co-body">${loadingHTML("Loading companies…")}</div>
+    </div>`;
+
+    let g;
+    try { g = await getGraph(); }
+    catch (e) { console.error("/api/graph (companies) failed:", e); const el = $("#co-body"); if (el) el.innerHTML = errorHTML(e); return; }
+    if (!$("#co-body")) return;   // navigated away during the fetch
+
+    const companies = g.companies || [];
+    const uname = Object.fromEntries((g.units || []).map((u) => [u.id, u.name]));
+    const linkedUnits = (c) => (c.units || []).map((cu) => uname[cu.unit_id] || cu.unit_id);
+    const companyTable = (rows) => `<div class="table-wrap"><table class="data">
+      <thead><tr><th>Company</th><th>Confidence</th><th>Records</th><th>Linked units</th></tr></thead>
+      <tbody>${rows.map((c) => `<tr>
+        <td><a href="#/search/${enc(c.name)}"><strong>${esc(c.name)}</strong></a></td>
+        <td><span class="badge ${esc(c.confidence || "probable")}">${esc(c.confidence || "probable")}</span></td>
+        <td>${(c.total_edges || 0).toLocaleString()}</td>
+        <td>${linkedUnits(c).map((n) => esc(n)).join(", ") || "—"}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+
+    let lastRows = [];
+    const CO_COLS = [
+      { label: "Company", key: "name", w: 30 },
+      { label: "Confidence", key: "confidence", w: 14 },
+      { label: "Records", key: "total_edges", w: 12 },
+      { label: "Linked Units", get: (c) => linkedUnits(c).join("; "), w: 60 },
+    ];
+    const draw = () => {
+      const q = ($("#co-q").value || "").toLowerCase();
+      const conf = $("#co-conf").value, sort = $("#co-sort").value;
+      const rows = companies.filter((c) => (!conf || (c.confidence || "probable") === conf) && (!q || (c.name || "").toLowerCase().includes(q)));
+      rows.sort((a, b) => sort === "name" ? (a.name || "").localeCompare(b.name || "")
+        : sort === "units" ? (b.units || []).length - (a.units || []).length
+        : (b.total_edges || 0) - (a.total_edges || 0));
+      lastRows = rows;
+      $("#co-count").textContent = `${rows.length.toLocaleString()} of ${companies.length.toLocaleString()} companies`;
+      $("#co-body").innerHTML = rows.length ? companyTable(rows) : emptyHTML("No companies match", "Try a different name or confidence filter.");
+    };
+    wireExport("co-exp", () => ({ title: "UNC-Linked Companies", filename: "UNC_Companies", columns: CO_COLS, rows: lastRows }));
+    ["co-q", "co-conf", "co-sort"].forEach((id) => { const el = document.getElementById(id); el.addEventListener(id === "co-q" ? "input" : "change", draw); });
+    draw();
+  }
+
   // ── view: UNITS MASTER LIST (editable) ───────────────────────────────────────
   let UNITS_CACHE = null;
 
-  // editable cell: contenteditable text that PUTs on blur when changed
+  // Whether edits will persist (backend writable: KV configured or local FS). On
+  // the read-only deployment this is false, so the edit UI is hidden and a
+  // read-only note shown instead of inviting edits that would 503.
+  let CAN_EDIT = false, HEALTH = null;
+  async function getHealth() {
+    if (HEALTH) return HEALTH;
+    try { HEALTH = await api("/health"); } catch { HEALTH = {}; }
+    return HEALTH;
+  }
+  const readOnlyNote = () => CAN_EDIT ? "" :
+    `<div class="ro-note">Viewing published data — editing is disabled on this deployment.</div>`;
+
+  // editable cell: contenteditable text that PUTs on blur when changed (or a
+  // plain read-only cell when editing is disabled)
   const editCell = (id, field, val, cls) =>
-    `<td class="ec ${cls || ""}" contenteditable="true" data-id="${esc(id)}" data-field="${field}" data-orig="${esc(val ?? "")}">${esc(val ?? "")}</td>`;
+    CAN_EDIT
+      ? `<td class="ec ${cls || ""}" contenteditable="true" data-id="${esc(id)}" data-field="${field}" data-orig="${esc(val ?? "")}">${esc(val ?? "")}</td>`
+      : `<td class="${cls || ""}">${esc(val ?? "")}</td>`;
 
   function unitsTable(rows, schools) {
     const schoolOpts = [{ id: "unc:root", name: "University of North Carolina at Chapel Hill" }, ...schools];
-    const parentSel = (id, val) => `<select class="es" data-id="${esc(id)}" data-field="parent_unit_id">${schoolOpts.map((s) => `<option value="${esc(s.id)}" ${s.id === val ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>`;
-    const typeSel = (id, val) => `<select class="es" data-id="${esc(id)}" data-field="unit_type">${optionsHTML(UNIT_TYPE_OPTS, val)}</select>`;
+    const schoolName = (val) => (schoolOpts.find((s) => s.id === val) || {}).name || val || "";
+    const parentSel = (id, val) => CAN_EDIT
+      ? `<td><select class="es" data-id="${esc(id)}" data-field="parent_unit_id">${schoolOpts.map((s) => `<option value="${esc(s.id)}" ${s.id === val ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></td>`
+      : `<td>${esc(schoolName(val))}</td>`;
+    const typeSel = (id, val) => CAN_EDIT
+      ? `<td><select class="es" data-id="${esc(id)}" data-field="unit_type">${optionsHTML(UNIT_TYPE_OPTS, val)}</select></td>`
+      : `<td>${esc(val || "")}</td>`;
     return `<div class="table-wrap"><table class="data edit">
       <thead><tr>
         <th>Name</th><th>Parent School</th><th>Type</th><th>Description / Focus Areas</th>
@@ -413,8 +575,8 @@
       </tr></thead>
       <tbody>${rows.map((u) => `<tr data-id="${esc(u.unit_id)}">
         ${editCell(u.unit_id, "unit_name", u.unit_name, "strong")}
-        <td>${parentSel(u.unit_id, u.parent_unit_id || "unc:root")}</td>
-        <td>${typeSel(u.unit_id, u.unit_type)}</td>
+        ${parentSel(u.unit_id, u.parent_unit_id || "unc:root")}
+        ${typeSel(u.unit_id, u.unit_type)}
         ${editCell(u.unit_id, "focus_areas", u.focus_areas || u.description)}
         ${editCell(u.unit_id, "disciplines", u.disciplines)}
         ${editCell(u.unit_id, "faculty_count", u.faculty_count, "num")}
@@ -422,17 +584,19 @@
         ${editCell(u.unit_id, "research_by", u.research_by)}
         ${editCell(u.unit_id, "date_of_research", u.date_of_research, "nowrap")}
         ${editCell(u.unit_id, "notes", u.notes)}
-        <td class="rowtools"><a class="mini" href="#/unit/${enc(u.unit_id)}" title="Open profile">↗</a><button class="mini del" data-del-unit="${esc(u.unit_id)}" title="Delete">×</button></td>
+        <td class="rowtools"><a class="mini" href="#/unit/${enc(u.unit_id)}" title="Open profile">↗</a>${CAN_EDIT ? `<button class="mini del" data-del-unit="${esc(u.unit_id)}" title="Delete">×</button>` : ""}</td>
       </tr>`).join("")}</tbody></table></div>`;
   }
 
   async function renderUnits() {
     const v = elView();
+    CAN_EDIT = (await getHealth()).writable === true;
     v.innerHTML = `<div class="page wrap">
       <div class="page-head"><div class="card-top"><div><span class="eyebrow">Master list</span><h1 class="page-title">UNC Schools &amp; Units</h1>
-        <p class="page-sub">Every school, center, institute and department at UNC–Chapel Hill. Click any cell to edit — changes save live. Open a profile with ↗.</p></div>
-        <div class="head-actions">${exportButtons("u-exp")}<button class="btn" id="u-add">＋ Add Unit</button></div></div></div>
+        <p class="page-sub">Every school, center, institute and department at UNC–Chapel Hill. ${CAN_EDIT ? "Click any cell to edit — changes save live. " : ""}Open a profile with ↗.</p></div>
+        <div class="head-actions">${exportButtons("u-exp")}${CAN_EDIT ? '<button class="btn" id="u-add">＋ Add Unit</button>' : ""}</div></div></div>
       ${coverageBar()}
+      ${readOnlyNote()}
       <div class="toolbar">
         <input type="search" id="u-search" placeholder="Search units by name…" />
         <select id="u-type"><option value="">All types</option></select>
@@ -509,7 +673,8 @@
       catch (err) { toast(err.message || "Delete failed", "err"); }
     });
 
-    $("#u-add").addEventListener("click", () => {
+    const uAdd = $("#u-add");
+    if (uAdd) uAdd.addEventListener("click", () => {
       openModal("Add Unit", [
         { key: "unit_name", label: "Name", placeholder: "e.g. Department of Statistics" },
         { key: "unit_type", label: "Type", type: "select", options: UNIT_TYPE_OPTS, value: "Department" },
@@ -664,12 +829,14 @@
 
   async function renderPartnerships(query) {
     const v = elView();
+    CAN_EDIT = (await getHealth()).writable === true;
     v.innerHTML = `<div class="page wrap">
       <div class="page-head"><div class="card-top"><div><span class="eyebrow">Inventory</span>
         <h1 class="page-title">UNC Partnerships</h1>
-        <p class="page-sub">Every external partnership, linked to a UNC unit. Click any cell to edit — changes save live. The unit column pulls from the same master list as Schools &amp; Units.</p></div>
-        <div class="head-actions">${exportButtons("p-exp")}<button class="btn" id="p-add">＋ Add Partnership</button></div></div></div>
+        <p class="page-sub">Every external partnership, linked to a UNC unit. ${CAN_EDIT ? "Click any cell to edit — changes save live. " : ""}The unit column pulls from the same master list as Schools &amp; Units.</p></div>
+        <div class="head-actions">${exportButtons("p-exp")}${CAN_EDIT ? '<button class="btn" id="p-add">＋ Add Partnership</button>' : ""}</div></div></div>
       ${coverageBar()}
+      ${readOnlyNote()}
       <div class="toolbar">
         <input type="search" id="f-q" placeholder="Search company or unit…" />
         <select id="f-area"><option value="">All areas</option></select>
@@ -728,8 +895,8 @@
         (!q || (r.company_name || "").toLowerCase().includes(q) || (r.unit_name || "").toLowerCase().includes(q)));
       lastRows = filtered;
       $("#p-count").textContent = `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} partnerships`;
-      $("#p-body").innerHTML = filtered.length ? editPartnershipTable(filtered, unitOpts)
-        : emptyHTML("No partnerships yet", rows.length ? "Loosen the filters to see more." : "Add one to get started — click ＋ Add Partnership.");
+      $("#p-body").innerHTML = filtered.length ? (CAN_EDIT ? editPartnershipTable(filtered, unitOpts) : partnershipTable(filtered))
+        : emptyHTML("No partnerships match", rows.length ? "Loosen the filters to see more." : (CAN_EDIT ? "Add one to get started — click ＋ Add Partnership." : "No partnerships in this view."));
     };
     wireExport("p-exp", () => ({ title: "UNC Partnerships", filename: "UNC_Partnerships", columns: P_EXPORT_COLS, rows: lastRows }));
     ["f-q", "f-area", "f-status", "f-tier"].forEach((id) => { const el = document.getElementById(id); el.addEventListener(id === "f-q" ? "input" : "change", draw); });
@@ -757,7 +924,8 @@
       catch (err) { toast(err.message || "Delete failed", "err"); }
     });
 
-    $("#p-add").addEventListener("click", () => {
+    const pAdd = $("#p-add");
+    if (pAdd) pAdd.addEventListener("click", () => {
       openModal("Add Partnership", [
         { key: "unit_id", label: "UNC unit", type: "select", options: unitOpts.map((u) => u.unit_id), value: unitOpts[0] && unitOpts[0].unit_id },
         { key: "area", label: "Area", type: "select", options: AREA_OPTS, value: "Programs" },
@@ -793,8 +961,9 @@
 
   // ── view: FACULTY ────────────────────────────────────────────────────────────
   function facultyCard(f) {
+    const name = f.faculty_id ? `<a href="#/faculty/${enc(f.faculty_id)}">${esc(f.full_name)}</a>` : esc(f.full_name);
     return `<div class="card">
-      <div class="card-top"><h3>${esc(f.full_name)}</h3>${f.partnership_count ? `<span class="kind">${f.partnership_count} partnership${f.partnership_count === 1 ? "" : "s"}</span>` : ""}</div>
+      <div class="card-top"><h3>${name}</h3>${f.partnership_count ? `<span class="kind">${f.partnership_count} partnership${f.partnership_count === 1 ? "" : "s"}</span>` : ""}</div>
       <div class="meta">${esc(f.title || "")}${f.unit_name ? `${f.title ? " · " : ""}<a href="#/unit/${enc(f.unit_id)}">${esc(f.unit_name)}</a>` : ""}</div>
       ${f.top_company ? `<div class="chips"><span class="chip">${esc(f.top_company)}</span></div>` : ""}
       ${safeUrl(f.profile_url) ? `<div style="margin-top:10px"><a class="src-link" href="${esc(safeUrl(f.profile_url))}" target="_blank" rel="noopener noreferrer">profile ↗</a></div>` : ""}
@@ -831,20 +1000,56 @@
       { label: "Profile", key: "profile_url", w: 36 },
     ];
 
+    let facShown = 150;
+    const STEP = 150;
     const draw = () => {
       const term = $("#fac-search").value.toLowerCase();
       const partnersOnly = $("#fac-partners").checked;
       let rows = fac.filter((f) => (!term || (f.full_name || "").toLowerCase().includes(term)) && (!partnersOnly || (f.partnership_count || 0) > 0));
       rows = rows.sort((a, b) => (b.partnership_count || 0) - (a.partnership_count || 0));
       lastRows = rows;
-      const shown = rows.slice(0, 300);
-      $("#fac-count").textContent = `${shown.length} shown of ${rows.length.toLocaleString()}${rows.length > 300 ? " (export includes all filtered)" : ""}`;
-      $("#fac-grid").innerHTML = shown.length ? `<div class="grid">${shown.map(facultyCard).join("")}</div>` : emptyHTML("No faculty match", "Try a different name.");
+      const shown = rows.slice(0, facShown);
+      $("#fac-count").textContent = `${shown.length.toLocaleString()} of ${rows.length.toLocaleString()} shown`;
+      const more = rows.length > shown.length
+        ? `<div class="more-row"><button class="btn ghost" id="fac-more">Show ${Math.min(STEP, rows.length - shown.length).toLocaleString()} more</button></div>` : "";
+      $("#fac-grid").innerHTML = shown.length ? `<div class="grid">${shown.map(facultyCard).join("")}</div>${more}` : emptyHTML("No faculty match", "Try a different name.");
+      const mb = $("#fac-more"); if (mb) mb.addEventListener("click", () => { facShown += STEP; draw(); });
     };
     wireExport("fac-exp", () => ({ title: "UNC Faculty", filename: "UNC_Faculty", columns: FAC_EXPORT_COLS, rows: lastRows }));
-    $("#fac-search").addEventListener("input", draw);
-    $("#fac-partners").addEventListener("change", draw);
+    $("#fac-search").addEventListener("input", () => { facShown = STEP; draw(); });
+    $("#fac-partners").addEventListener("change", () => { facShown = STEP; draw(); });
     draw();
+  }
+
+  // ── view: FACULTY PROFILE ────────────────────────────────────────────────────
+  async function renderFacultyProfile(id) {
+    const v = elView();
+    v.innerHTML = `<div class="page wrap"><div id="facp-body">${loadingHTML("Loading researcher…")}</div></div>`;
+    const body = $("#facp-body");
+    let f;
+    try { f = await api("/faculty/" + enc(id)); }
+    catch (e) { console.error("/faculty/{id} failed:", e, id); if (body) body.innerHTML = errorHTML(e, { notFound: "That researcher isn't in the directory." }); return; }
+    if (!$("#facp-body")) return;
+    if (f.error) { body.innerHTML = emptyHTML("Researcher not found", f.error); return; }
+    const ps = f.partnerships || [];
+    body.innerHTML = `
+      <div class="crumb"><a href="#/faculty">← Faculty</a></div>
+      <div class="page-head"><div class="card-top"><div>
+        <h1 class="page-title">${esc(f.full_name)}</h1>
+        <p class="page-sub">${esc(f.title || "")}${f.unit_name ? `${f.title ? " · " : ""}<a href="#/unit/${enc(f.unit_id)}">${esc(f.unit_name)}</a>` : ""}</p>
+      </div>${f.partnership_count != null ? `<span class="kind">${f.partnership_count} partnership${f.partnership_count === 1 ? "" : "s"}</span>` : ""}</div>
+      ${safeUrl(f.profile_url) ? `<div style="margin-top:6px"><a class="src-link" href="${esc(safeUrl(f.profile_url))}" target="_blank" rel="noopener noreferrer">External profile ↗</a></div>` : ""}
+      </div>
+      ${ps.length ? `<div class="export-row">${exportButtons("facp-exp")}</div>` + partnershipTable(ps)
+        : emptyHTML("No partnerships recorded", "No industry partnerships are mapped to this researcher in public data yet.")}`;
+    if (ps.length) {
+      const cols = [
+        { label: "Unit", key: "unit_name", w: 28 }, { label: "Area", key: "area", w: 14 }, { label: "Company", key: "company_name", w: 22 },
+        { label: "Status", key: "status", w: 12 }, { label: "Funding", key: "funding_value", w: 12 },
+        { label: "Source / Evidence", key: "source_url", w: 30 }, { label: "Verified", key: "verification_tier", w: 12 },
+      ];
+      wireExport("facp-exp", () => ({ title: `${f.full_name} — Partnerships`, filename: `${f.full_name}_Partnerships`, columns: cols, rows: ps }));
+    }
   }
 
   // ── view: NETWORK (3D, API-driven) ────────────────────────────────────────────
@@ -856,8 +1061,21 @@
         <div class="head-actions">${exportButtons("net-exp")}</div></div></div>
       ${coverageBar()}
       <div class="network-stage"><div id="graph-3d"></div>
-        <div class="net-status" id="net-status">Assembling network…</div>
-        <button class="net-replay" id="net-replay" title="Replay the network growth">↻ Replay growth</button>
+        <div class="net-bar">
+          <div class="net-status" id="net-status">Assembling network…</div>
+          <div class="net-tools">
+            <input type="search" id="net-find" class="net-find" placeholder="Find a node…" aria-label="Find a node in the graph" autocomplete="off" />
+            <select id="net-mode" class="net-sel" aria-label="Grouping mode">
+              <option value="auto">Auto-cycle</option>
+              <option value="school">By school</option>
+              <option value="tier">By confidence tier</option>
+              <option value="layered">By role</option>
+            </select>
+            <button class="net-btn" id="net-pause" title="Pause motion" aria-label="Pause motion">⏸</button>
+            <button class="net-btn" id="net-2d" title="Toggle 2D / 3D" aria-label="Toggle 2D / 3D">2D</button>
+            <button class="net-btn" id="net-replay" title="Replay the network growth" aria-label="Replay growth">↻</button>
+          </div>
+        </div>
         <div class="net-legend">
           <span><i style="background:#1d1d1f"></i> UNC–Chapel Hill</span>
           <span><i style="background:#3f7d6e"></i> School / unit</span>
@@ -876,7 +1094,7 @@
     NET_ABORT = new AbortController();
 
     let g;
-    try { g = await api("/api/graph", { timeoutMs: 20000, signal: NET_ABORT.signal }); }
+    try { g = GRAPH_CACHE || await api("/api/graph", { timeoutMs: 20000, signal: NET_ABORT.signal }); }
     catch (e) {
       if (myToken !== NET_TOKEN) return;            // superseded — don't touch the new view
       console.error("/api/graph failed:", e);
@@ -884,6 +1102,7 @@
       return;
     }
     if (myToken !== NET_TOKEN || !document.body.contains(stage)) return;  // superseded mid-fetch
+    GRAPH_CACHE = g;   // share with the company index + search autocomplete
 
     wireExport("net-exp", () => ({
       title: "UNC Research Network — Companies", filename: "UNC_Network_Companies",
@@ -955,25 +1174,30 @@
       .onNodeHover((node) => {
         if (node === hoverNode) return;
         hoverNode = node || null;
-        hlNodes.clear(); hlLinks.clear();
-        if (node) {
-          hlNodes.add(node);
-          Graph.graphData().links.forEach((l) => {
-            if (l.source === node || l.target === node) {
-              hlLinks.add(l);
-              hlNodes.add(l.source === node ? l.target : l.source);
-            }
-          });
-        }
         stage.style.cursor = node ? "pointer" : "";
-        // re-evaluate the visual accessors so the highlight takes effect
-        Graph.nodeVal(Graph.nodeVal()).linkColor(Graph.linkColor()).linkWidth(Graph.linkWidth())
-          .linkDirectionalParticles(Graph.linkDirectionalParticles())
-          .linkDirectionalParticleWidth(Graph.linkDirectionalParticleWidth())
-          .linkDirectionalParticleSpeed(Graph.linkDirectionalParticleSpeed())
-          .linkDirectionalParticleColor(Graph.linkDirectionalParticleColor());
+        applyHighlight(hoverNode);
       })
       .onNodeClick((n) => { if (n.group === "unit") location.hash = "#/unit/" + enc(n.id); else if (n.group !== "root") location.hash = "#/search/" + enc(n.label); });
+
+    // highlight a node + its neighbours/links, then re-evaluate the visual
+    // accessors so it takes effect. Used by hover AND the in-graph Find control.
+    function applyHighlight(node) {
+      hlNodes.clear(); hlLinks.clear();
+      if (node) {
+        hlNodes.add(node);
+        Graph.graphData().links.forEach((l) => {
+          if (l.source === node || l.target === node) {
+            hlLinks.add(l);
+            hlNodes.add(l.source === node ? l.target : l.source);
+          }
+        });
+      }
+      Graph.nodeVal(Graph.nodeVal()).linkColor(Graph.linkColor()).linkWidth(Graph.linkWidth())
+        .linkDirectionalParticles(Graph.linkDirectionalParticles())
+        .linkDirectionalParticleWidth(Graph.linkDirectionalParticleWidth())
+        .linkDirectionalParticleSpeed(Graph.linkDirectionalParticleSpeed())
+        .linkDirectionalParticleColor(Graph.linkDirectionalParticleColor());
+    }
 
     // baseline forces; the morph loop below nudges these over time so the
     // structure keeps reorganising. Lower velocity decay = more fluid, neuron-
@@ -1022,6 +1246,9 @@
     //    centre (set by zoomToFit) so the view is always alive and stays
     //    framed. Drag/scroll pauses the spin; it resumes after a short idle.
     let rafId = 0, resumeTimer = null;
+    // user-facing control state (wired to the toolbar below)
+    let paused = false, autoCycle = true, is2D = false;
+    const spinOK = () => !paused && !is2D && !document.hidden;   // when auto-orbit may run
     const controls = Graph.controls();
     if (controls) {
       controls.enableDamping = true;
@@ -1031,7 +1258,7 @@
       controls.autoRotateSpeed = 0.5;
       if (controls.addEventListener) {
         controls.addEventListener("start", () => { controls.autoRotate = false; clearTimeout(resumeTimer); });
-        controls.addEventListener("end", () => { clearTimeout(resumeTimer); resumeTimer = setTimeout(() => { controls.autoRotate = true; }, 3500); });
+        controls.addEventListener("end", () => { clearTimeout(resumeTimer); resumeTimer = setTimeout(() => { controls.autoRotate = spinOK(); }, 3500); });
       }
     }
     // frame the graph once it first settles; after that the morph loop keeps it
@@ -1086,9 +1313,9 @@
     (function regroup() {
       morphTimer = setTimeout(() => {
         if (!document.body.contains(stage)) return; // view torn down → stop
-        // skip the (heavy) re-heat while the tab is backgrounded — no point
-        // restructuring something nobody is looking at.
-        if (!building && !document.hidden) {
+        // only auto-advance when not paused, not pinned to a mode, not building,
+        // and the tab is visible (no point restructuring something unseen).
+        if (autoCycle && !paused && !building && !document.hidden) {
           modeIdx = (modeIdx + 1) % MODE_ORDER.length;
           layoutMode = MODE_ORDER[modeIdx];
           try {
@@ -1106,8 +1333,54 @@
     })();
 
     // pause the camera spin when the tab is hidden; resume when it's visible
-    const onVis = () => { if (controls) controls.autoRotate = !document.hidden; };
+    const onVis = () => { if (controls) controls.autoRotate = spinOK(); };
     document.addEventListener("visibilitychange", onVis);
+
+    // ── toolbar wiring: Find, grouping pin, pause/play, 2D/3D ──
+    const findInput = document.getElementById("net-find");
+    if (findInput) findInput.addEventListener("input", () => {
+      const q = findInput.value.trim().toLowerCase();
+      if (controls) controls.autoRotate = q ? false : spinOK();   // hold still while searching
+      if (!q) { applyHighlight(null); return; }
+      const node = (Graph.graphData().nodes || []).find((n) => (n.label || "").toLowerCase().includes(q));
+      applyHighlight(node || null);
+      if (node && typeof node.x === "number") Graph.cameraPosition({ x: node.x, y: node.y, z: node.z + 90 }, node, 800);
+    });
+
+    const modeSel = document.getElementById("net-mode");
+    if (modeSel) modeSel.addEventListener("change", () => {
+      const val = modeSel.value;
+      autoCycle = val === "auto";
+      if (!autoCycle) {
+        layoutMode = val;
+        try { Graph.d3Force("charge").strength(val === "school" ? -120 : -65); if (Graph.d3ReheatSimulation) Graph.d3ReheatSimulation(); } catch (_) {}
+        if (statusEl) statusEl.textContent = `${MODE_LABEL[val]} · ${(Graph.graphData().nodes || []).length.toLocaleString()} nodes`;
+      }
+    });
+
+    const pauseBtn = document.getElementById("net-pause");
+    if (pauseBtn) pauseBtn.addEventListener("click", () => {
+      paused = !paused;
+      if (controls) controls.autoRotate = spinOK();
+      pauseBtn.textContent = paused ? "▶" : "⏸";
+      const lbl = paused ? "Resume motion" : "Pause motion";
+      pauseBtn.title = lbl; pauseBtn.setAttribute("aria-label", lbl);
+      pauseBtn.classList.toggle("on", paused);
+    });
+
+    const btn2d = document.getElementById("net-2d");
+    if (btn2d) btn2d.addEventListener("click", () => {
+      is2D = !is2D;
+      try {
+        Graph.numDimensions(is2D ? 2 : 3);
+        if (controls) { controls.enableRotate = !is2D; controls.autoRotate = spinOK(); }
+        if (is2D) Graph.cameraPosition({ x: 0, y: 0, z: 360 }, { x: 0, y: 0, z: 0 }, 800);
+        if (Graph.d3ReheatSimulation) Graph.d3ReheatSimulation();
+        setTimeout(() => { if (document.body.contains(stage)) Graph.zoomToFit(700, 70); }, 1100);
+      } catch (_) {}
+      btn2d.textContent = is2D ? "3D" : "2D";
+      btn2d.classList.toggle("on", is2D);
+    });
 
     // drive the controls every frame (autoRotate + damping) and tear everything
     // down when the network view is replaced, so nothing leaks across routes.
@@ -1185,10 +1458,11 @@
       switch (name) {
         case "": return await renderHome();
         case "search": return await renderSearch(parts.slice(1).join("/") || "");
+        case "companies": return await renderCompanies();
         case "units": return await renderUnits();
         case "unit": return await renderUnit(parts[1], parts[2]);
         case "partnerships": return await renderPartnerships(query);
-        case "faculty": return await renderFaculty();
+        case "faculty": return parts[1] ? await renderFacultyProfile(parts[1]) : await renderFaculty();
         case "network": return await renderNetwork();
         case "about": return await renderAbout();
         default: elView().innerHTML = `<div class="page wrap">${emptyHTML("Page not found", "That route doesn't exist. Head back to search.")}</div>`;
@@ -1202,18 +1476,19 @@
   // ── boot: health check + freshness, then route ──────────────────────────────────
   async function boot() {
     const statusEl = document.getElementById("api-status");
-    Promise.resolve().then(async () => {
-      try {
-        const h = await api("/health");
-        const ok = h.status === "ok";
+    // Await health up front so CAN_EDIT (writable) is known before the first
+    // render, and reflect it in the status badge.
+    try {
+      const h = await getHealth();
+      const ok = h.status === "ok";
+      if (statusEl) {
         statusEl.className = "api-status " + (ok ? "ok" : "down");
-        statusEl.innerHTML = `<span class="api-dot"></span>${ok ? "Live API" : "API degraded"}`;
-      } catch (e) {
-        console.error("/health failed:", e);
-        statusEl.className = "api-status down";
-        statusEl.innerHTML = `<span class="api-dot"></span>API offline`;
+        statusEl.innerHTML = `<span class="api-dot"></span>${ok ? "Live API" : (h.status === "degraded" ? "API degraded" : "API offline")}`;
       }
-    });
+    } catch (e) {
+      console.error("/health failed:", e);
+      if (statusEl) { statusEl.className = "api-status down"; statusEl.innerHTML = `<span class="api-dot"></span>API offline`; }
+    }
     try { FRESHNESS = await api("/freshness"); const fb = document.getElementById("footer-built"); if (fb && FRESHNESS.built_at) fb.textContent = fmtDate(FRESHNESS.built_at); }
     catch (e) { console.error("/freshness failed:", e); }
     // Delegated Retry handler (replaces an inline onclick so the CSP can forbid

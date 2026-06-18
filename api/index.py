@@ -196,6 +196,18 @@ def _kv_enabled() -> bool:
     return bool(_KV_URL and _KV_TOKEN)
 
 
+def _writable() -> bool:
+    """Whether edits would actually persist: a KV store is configured, or the
+    inventory file's directory is writable (local dev). On Vercel the bundle FS
+    is read-only, so this is False and the UI can present a read-only view."""
+    if _kv_enabled():
+        return True
+    try:
+        return os.access(str(PARTNERSHIPS_PATH.parent), os.W_OK)
+    except Exception:
+        return False
+
+
 def _kv_get():
     import urllib.request
     req = urllib.request.Request(f"{_KV_URL}/get/{_KV_KEY}",
@@ -558,9 +570,9 @@ def handle(method: str, path: str, qs: dict, body: bytes = b"", headers: dict | 
         if graph.get("_empty"):
             # Graph not built / unreadable — report degraded but stay HTTP 200 so
             # the frontend health check doesn't treat it as a hard failure.
-            status, headers, body = json_response({"status": "degraded", "reason": "graph not built", "service": "unc-research-graph"})
+            status, headers, body = json_response({"status": "degraded", "reason": "graph not built", "service": "unc-research-graph", "writable": _writable()})
             return status, {**headers, **cors_headers()}, body
-        status, headers, body = json_response({"status": "ok", "service": "unc-research-graph", "n_companies": meta.get("n_companies"), "n_units": meta.get("n_units_with_data"), "built_at": meta.get("built_at")})
+        status, headers, body = json_response({"status": "ok", "service": "unc-research-graph", "n_companies": meta.get("n_companies"), "n_units": meta.get("n_units_with_data"), "built_at": meta.get("built_at"), "writable": _writable()})
         return status, {**headers, **cors_headers()}, body
 
     # /stats

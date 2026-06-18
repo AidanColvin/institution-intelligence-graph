@@ -102,6 +102,24 @@ button { font-family:inherit; cursor:pointer; }
   transition:background .18s var(--ease),transform .12s var(--ease); }
 .search-box .go:hover { background:var(--accent-strong); }
 .search-box .go:active { transform:scale(0.97); }
+.more-row { display:flex; justify-content:center; margin-top:22px; }
+/* read-only notice (shown when the deployment can't persist edits) */
+.ro-note { display:inline-flex; align-items:center; gap:8px; margin:4px 0 18px;
+  background:var(--surface-2,#f5f5f7); border:1px solid var(--hairline-2); border-radius:var(--r-pill);
+  padding:8px 16px; font-size:13px; color:var(--muted); }
+.ro-note::before { content:"🔒"; font-size:12px; }
+/* type-ahead dropdown */
+.ac-box { position:absolute; left:0; right:0; top:calc(100% + 8px); z-index:40;
+  background:var(--card); border:1px solid var(--hairline); border-radius:var(--r-lg,16px);
+  box-shadow:var(--shadow); overflow:hidden; max-height:340px; overflow-y:auto; text-align:left; }
+.ac-item { display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:11px 18px; cursor:pointer; font-size:15px; color:var(--text); border-top:1px solid var(--hairline-2); }
+.ac-box .ac-item:first-child { border-top:none; }
+.ac-item:hover, .ac-item.active { background:var(--accent-soft); }
+.ac-name { font-weight:600; letter-spacing:-0.01em; }
+.ac-meta { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); white-space:nowrap; }
+.ac-query { color:var(--muted); font-size:14px; }
+.ac-query b { color:var(--text); }
 .starter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(238px,1fr)); gap:14px; margin-top:40px; }
 .starter-card { text-align:left; background:var(--card); border:1px solid var(--hairline-2); border-radius:var(--r-lg);
   padding:20px; display:flex; flex-direction:column; gap:7px;
@@ -228,17 +246,25 @@ table.data tr:hover td { background:var(--surface-2); }
 .net-legend span:nth-child(3) i { animation-delay:.6s; }
 .net-legend span:nth-child(4) i { animation-delay:.9s; }
 @keyframes legendPulse { 0%,100% { box-shadow:0 0 0 0 rgba(63,125,110,0); } 50% { box-shadow:0 0 0 4px rgba(63,125,110,0.16); } }
-.net-status { position:absolute; left:16px; top:16px; max-width:60%; display:flex; align-items:center; gap:8px;
-  background:rgba(255,255,255,0.82); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+.net-bar { position:absolute; left:16px; right:16px; top:16px; z-index:5; display:flex; align-items:flex-start;
+  justify-content:space-between; gap:12px; flex-wrap:wrap; pointer-events:none; }
+.net-bar > * { pointer-events:auto; }
+.net-status { display:flex; align-items:center; gap:8px; max-width:48%;
+  background:rgba(255,255,255,0.85); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
   border:1px solid var(--hairline-2); border-radius:999px; padding:7px 14px; font-size:12.5px; font-weight:500;
   color:var(--ink); letter-spacing:-.01em; }
 .net-status::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--accent-2,#3f7d6e);
   box-shadow:0 0 0 0 rgba(63,125,110,.5); animation:legendPulse 1.6s ease-in-out infinite; flex:none; }
-.net-replay { position:absolute; right:16px; top:16px; background:rgba(255,255,255,0.82);
-  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border:1px solid var(--hairline-2);
-  border-radius:999px; padding:7px 13px; font-size:12.5px; font-weight:500; color:var(--ink); cursor:pointer;
-  transition:background .18s var(--ease,ease); }
-.net-replay:hover { background:#fff; }
+.net-tools { display:flex; align-items:center; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+.net-find, .net-sel, .net-btn { background:rgba(255,255,255,0.85); backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px); border:1px solid var(--hairline-2); border-radius:999px;
+  font-size:12.5px; color:var(--ink); outline:none; transition:background .18s var(--ease,ease),border-color .18s var(--ease,ease); }
+.net-find { width:150px; padding:7px 14px; }
+.net-find:focus { border-color:var(--accent); background:#fff; }
+.net-sel { padding:7px 11px; cursor:pointer; }
+.net-btn { min-width:34px; padding:7px 11px; font-weight:600; cursor:pointer; }
+.net-btn:hover, .net-sel:hover { background:#fff; }
+.net-btn.on { background:var(--ink); color:#fff; border-color:var(--ink); }
 /* 3D graph hover tooltip (rendered into 3d-force-graph's .scene-tooltip) */
 .g3d-tip { font-family:inherit; line-height:1.3; text-align:left; padding:2px 1px; }
 .g3d-tip b { display:block; font-size:13px; font-weight:600; color:#fff; }
