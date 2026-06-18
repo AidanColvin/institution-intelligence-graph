@@ -62,6 +62,18 @@
   const fmtUSD = (n) => { if (!n) return ""; n = +n; if (n >= 1e9) return "$" + (n / 1e9).toFixed(1) + "B"; if (n >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M"; if (n >= 1e3) return "$" + (n / 1e3).toFixed(0) + "K"; return "$" + n; };
   const fmtDate = (d) => { if (!d) return ""; try { const dt = new Date(d); if (isNaN(dt)) return d; return dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: d.length > 7 ? "numeric" : undefined }); } catch { return d; } };
   const EDGE_LABEL = { grant: "Grant", paper: "Paper", trial: "Trial", contract: "Contract", patent: "Patent" };
+  // ── confidence / verification: self-explaining badges (hover = what it means) ──
+  const CONF_TIP = {
+    confirmed: "Identity confirmed — matched a unique SEC filer (CIK). Verified against ClinicalTrials.gov. High trust.",
+    probable: "Matched by company name (no SEC CIK), but linked to UNC by public clinical-trial records below — open one to verify.",
+  };
+  const TIER_TIP = {
+    Verified: "A ClinicalTrials.gov record names this company as sponsor/collaborator on a trial UNC ran.",
+    Reported: "A co-authored publication links a UNC author with a company-affiliated author.",
+    Inferred: "A weaker, indirect signal — treat as a lead.",
+  };
+  const confBadge = (tier) => `<span class="badge ${esc(tier || "probable")}" title="${esc(CONF_TIP[tier] || "")}">${esc(tier || "probable")}</span>`;
+  const tierBadge = (t) => `<span class="badge ${esc(t || "")}" title="${esc(TIER_TIP[t] || "")}">${esc(t || "")}</span>`;
   const loadingHTML = (label) => `<div class="loading"><div class="spinner"></div>${esc(label || "Loading…")}</div>`;
   function errorHTML(err, ctx) { const f = friendlyError(err, ctx); return `<div class="error"><h3>${esc(f.title)}</h3><p>${esc(f.msg)}</p><p style="margin-top:14px"><button class="btn ghost" data-reload>Retry</button></p></div>`; }
   function emptyHTML(title, msg) { return `<div class="empty"><h3>${esc(title)}</h3><p>${esc(msg)}</p></div>`; }
@@ -306,7 +318,7 @@
       if (!box) { box = document.createElement("div"); box.className = "ac-box"; wrap.appendChild(box); }
       active = -1;
       box.innerHTML = items.map((it, i) => it.kind === "company"
-        ? `<div class="ac-item" data-i="${i}"><span class="ac-name">${esc(it.c.name)}</span><span class="ac-meta"><span class="badge ${esc(it.c.confidence || "probable")}">${esc(it.c.confidence || "probable")}</span> ${(it.c.total_edges || 0).toLocaleString()} records</span></div>`
+        ? `<div class="ac-item" data-i="${i}"><span class="ac-name">${esc(it.c.name)}</span><span class="ac-meta">${confBadge(it.c.confidence)} ${(it.c.total_edges || 0).toLocaleString()} records</span></div>`
         : `<div class="ac-item ac-query" data-i="${i}">Search “<b>${esc(it.q)}</b>” as a topic →</div>`).join("");
       box.querySelectorAll(".ac-item").forEach((el) => {
         el.addEventListener("mousedown", (e) => { e.preventDefault(); const it = items[+el.dataset.i]; go(it.kind === "company" ? it.c.name : it.q); });
@@ -422,9 +434,11 @@
         <div class="card-top">
           <div><span class="eyebrow">Company footprint</span>
             <h1 class="page-title">${esc(co.name)}</h1>
-            <p class="page-sub">${co.cik ? `SEC CIK ${esc(co.cik)} · ` : ""}${(co.total_edges || 0).toLocaleString()} public records linking to UNC across ${(co.units || []).length} unit(s).</p>
+            <p class="page-sub">${tier === "confirmed"
+              ? `<b>Identity SEC-confirmed</b>${co.cik ? ` (CIK ${esc(co.cik)})` : ""} · `
+              : `<b>Matched by name</b> — verify via the records below · `}${(co.total_edges || 0).toLocaleString()} public records linking it to UNC across ${(co.units || []).length} unit(s).</p>
           </div>
-          <span class="badge ${esc(tier)}">${esc(tier)}</span>
+          ${confBadge(tier)}
         </div></div>`;
       html += (co.units || []).map((u) => {
         const counts = Object.entries(u.counts || {}).map(([t, n]) => `<span class="ev-count">${n} ${esc(EDGE_LABEL[t] || t)}${n > 1 ? "s" : ""}</span>`).join("");
@@ -510,7 +524,7 @@
       <thead><tr><th>Company</th><th>Confidence</th><th>Records</th><th>Linked units</th></tr></thead>
       <tbody>${rows.map((c) => `<tr>
         <td><a href="#/search/${enc(c.name)}"><strong>${esc(c.name)}</strong></a></td>
-        <td><span class="badge ${esc(c.confidence || "probable")}">${esc(c.confidence || "probable")}</span></td>
+        <td>${confBadge(c.confidence)}</td>
         <td>${(c.total_edges || 0).toLocaleString()}</td>
         <td>${linkedUnits(c).map((n) => esc(n)).join(", ") || "—"}</td>
       </tr>`).join("")}</tbody></table></div>`;
@@ -800,7 +814,7 @@
         <td><a href="#/unit/${enc(r.unit_id)}">${esc(r.unit_name || r.unit_id)}</a></td>
         <td>${esc(r.area || "")}</td>
         <td>${esc(r.company_name || "")}</td>
-        <td><span class="badge ${esc(r.verification_tier || "")}">${esc(r.verification_tier || "")}</span></td>
+        <td>${tierBadge(r.verification_tier)}</td>
         <td>${esc(fmtUSD(r.funding_value))}</td>
         <td class="src-link">${safeUrl(r.source_url) ? `<a href="${esc(safeUrl(r.source_url))}" target="_blank" rel="noopener noreferrer">record ↗</a>` : ""}</td>
         <td>${esc(fmtDate(r.start_date || r.date_of_research))}</td>
