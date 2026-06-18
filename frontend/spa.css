@@ -169,6 +169,22 @@ button { font-family:inherit; cursor:pointer; }
 .sk-row:last-child { border-bottom:none; }
 .sk-row .sk-line { flex:none; margin:0; height:13px; }
 @media (prefers-reduced-motion: reduce){ .sk { animation:none; } }
+
+/* ── keyboard list nav + companies expander ──────────────────────────── */
+.ikbd { font-family:inherit; font-size:10.5px; background:var(--surface-2,#f5f5f7); border:1px solid var(--hairline-2);
+  border-radius:4px; padding:0 5px; color:var(--muted); margin:0 1px; }
+tr.kbd-row > td { background:var(--accent-soft); }
+.card.kbd-row { box-shadow:0 0 0 2px var(--accent-line), var(--shadow); border-color:var(--accent-line); transform:translateY(-2px); }
+.co-table .co-exp-cell { width:30px; text-align:center; color:var(--faint); }
+.co-row { cursor:pointer; }
+.co-row:hover > td { background:var(--surface-2,#f5f5f7); }
+.co-row.open > td { background:var(--accent-soft); }
+.co-chev { font-size:10px; display:inline-block; }
+.co-detail > td { background:var(--surface-2,#f7f7f9); padding:0 18px; }
+.co-ev { padding:10px 2px 14px; font-size:13.5px; color:var(--muted); }
+.co-ev > p { margin-bottom:9px; color:var(--text); }
+.co-ev-units { margin:0 0 11px; padding-left:18px; display:grid; gap:6px; }
+.co-ev-units li { font-size:13px; line-height:1.45; }
 /* provenance / "how to read this" note above data tables */
 .data-note { display:flex; gap:10px; align-items:flex-start; margin:2px 0 18px; max-width:100%;
   background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:var(--r-md,12px);

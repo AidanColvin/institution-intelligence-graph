@@ -100,6 +100,28 @@
   const recentList = () => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; } };
   const pushRecent = (q) => { q = (q || "").trim(); if (!q) return; try { let l = recentList().filter((x) => x.toLowerCase() !== q.toLowerCase()); l.unshift(q); localStorage.setItem(RECENT_KEY, JSON.stringify(l.slice(0, 6))); } catch {} };
 
+  // shareable filters: rewrite the URL query in place (no navigation/re-render)
+  const syncQuery = (route, params) => {
+    const qs = Object.entries(params).filter(([, v]) => v != null && v !== "").map(([k, v]) => enc(k) + "=" + enc(v)).join("&");
+    try { history.replaceState(null, "", "#/" + route + (qs ? "?" + qs : "")); } catch {}
+  };
+  // keyboard list nav: ↑/↓ highlight a row, ↵ activates it. Self-unwires when the
+  // container is gone (route change). Skips when the ⌘K palette is open.
+  function wireListNav(containerId, rowSelector, onEnter) {
+    let idx = -1;
+    const rows = () => { const c = document.getElementById(containerId); return c ? Array.from(c.querySelectorAll(rowSelector)) : null; };
+    const move = (d) => { const r = rows(); if (!r || !r.length) return; r.forEach((x) => x.classList.remove("kbd-row")); idx = (idx + d + r.length) % r.length; r[idx].classList.add("kbd-row"); r[idx].scrollIntoView({ block: "nearest" }); };
+    function onKey(e) {
+      const r = rows();
+      if (r === null) { document.removeEventListener("keydown", onKey); return; }  // view gone
+      if (document.getElementById("cmdk")) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+      else if (e.key === "Enter" && idx >= 0 && r[idx]) { e.preventDefault(); onEnter(r[idx]); }
+    }
+    document.addEventListener("keydown", onKey);
+  }
+
   // ── write helpers: edit/add/delete against the keyless write API ─────────────
   // Edit token: only required when the server has EDIT_TOKEN configured. We
   // prompt lazily on the first 401 and remember it in localStorage.
@@ -516,24 +538,26 @@
     if (xRows && xRows.length) wireExport("s-exp", () => ({ title: xTitle, filename: xTitle, columns: xCols, rows: xRows }));
   }
 
-  // ── view: COMPANIES INDEX (browse/sort/filter all linked companies) ───────────
-  async function renderCompanies() {
+  // ── view: COMPANIES INDEX (browse/sort/filter; shareable, keyboard-nav, expandable) ──
+  async function renderCompanies(query = {}) {
     const v = elView();
     v.innerHTML = `<div class="page wrap">
       <div class="page-head"><div class="card-top"><div><span class="eyebrow">Directory</span>
         <h1 class="page-title">Companies</h1>
-        <p class="page-sub">Every external organisation linked to UNC by a public record. Filter and sort, then open one to see its full footprint.</p></div>
+        <p class="page-sub">Every external organisation linked to UNC by a public record. Filter and sort, then expand a row for the evidence — or open its full footprint. Use <kbd class="ikbd">↑</kbd><kbd class="ikbd">↓</kbd> + <kbd class="ikbd">↵</kbd>.</p></div>
         <div class="head-actions">${exportButtons("co-exp")}</div></div></div>
       ${coverageBar()}
       ${dataNote(COMPANY_NOTE)}
       <div class="toolbar">
-        <input type="search" id="co-q" placeholder="Filter companies by name…" />
+        <input type="search" id="co-q" placeholder="Filter companies by name…" value="${esc(query.q || "")}" />
         <select id="co-conf"><option value="">All confidence</option><option value="confirmed">Confirmed</option><option value="probable">Probable</option></select>
         <select id="co-sort"><option value="records">Sort: Most records</option><option value="name">Sort: Name</option><option value="units">Sort: Most units</option></select>
         <span class="count" id="co-count"></span>
       </div>
       <div id="co-body">${skeletonTable(12)}</div>
     </div>`;
+    if (query.conf) $("#co-conf").value = query.conf;
+    if (query.sort) $("#co-sort").value = query.sort;
 
     let g;
     try { g = await getGraph(); }
@@ -543,21 +567,35 @@
     const companies = g.companies || [];
     const uname = Object.fromEntries((g.units || []).map((u) => [u.id, u.name]));
     const linkedUnits = (c) => (c.units || []).map((cu) => uname[cu.unit_id] || cu.unit_id);
-    const companyTable = (rows) => `<div class="table-wrap"><table class="data">
-      <thead><tr><th>Company</th><th>Confidence</th><th>Records</th><th>Linked units</th></tr></thead>
-      <tbody>${rows.map((c) => `<tr>
-        <td><a href="#/search/${enc(c.name)}"><strong>${esc(c.name)}</strong></a></td>
+    const secUrl = (cik) => `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${enc(cik)}&type=&dateb=&owner=include&count=40`;
+    const detailHTML = (c) => {
+      const conf = c.confidence === "confirmed"
+        ? `<b>Identity confirmed</b> in SEC EDGAR. <a href="${esc(secUrl(c.cik))}" target="_blank" rel="noopener noreferrer">SEC filings (CIK ${esc(c.cik)}) ↗</a>`
+        : `<b>Matched by name</b> (no SEC CIK) — the UNC link is from the public clinical-trial records below.`;
+      const units = (c.units || []).map((cu) => {
+        const nm = uname[cu.unit_id] || cu.unit_id;
+        const cnt = Object.entries(cu.counts || {}).map(([t, n]) => `${n} ${EDGE_LABEL[t] || t}${n > 1 ? "s" : ""}`).join(", ");
+        const s = (cu.samples || []).find((x) => x.url) || (cu.samples || [])[0];
+        const link = s && safeUrl(s.url) ? ` — <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener noreferrer">${esc((s.title || "record").slice(0, 64))} ↗</a>` : "";
+        return `<li><a href="#/unit/${enc(cu.unit_id)}">${esc(nm)}</a>${cnt ? ` <span class="meta">(${esc(cnt)})</span>` : ""}${link}</li>`;
+      }).join("");
+      return `<div class="co-ev"><p>${conf}</p>${units ? `<ul class="co-ev-units">${units}</ul>` : ""}<a class="src-link" href="#/search/${enc(c.name)}">View full footprint →</a></div>`;
+    };
+    const companyTable = (rows) => `<div class="table-wrap"><table class="data co-table">
+      <thead><tr><th aria-label="expand"></th><th>Company</th><th>Confidence</th><th>Records</th><th>Linked units</th></tr></thead>
+      <tbody>${rows.map((c) => `<tr class="co-row">
+        <td class="co-exp-cell"><span class="co-chev">▸</span></td>
+        <td><a href="#/search/${enc(c.name)}" class="co-name"><strong>${esc(c.name)}</strong></a></td>
         <td>${confBadge(c.confidence)}</td>
         <td>${(c.total_edges || 0).toLocaleString()}</td>
         <td>${linkedUnits(c).map((n) => esc(n)).join(", ") || "—"}</td>
-      </tr>`).join("")}</tbody></table></div>`;
+      </tr>
+      <tr class="co-detail" hidden><td></td><td colspan="4">${detailHTML(c)}</td></tr>`).join("")}</tbody></table></div>`;
 
     let lastRows = [];
     const CO_COLS = [
-      { label: "Company", key: "name", w: 30 },
-      { label: "Confidence", key: "confidence", w: 14 },
-      { label: "Records", key: "total_edges", w: 12 },
-      { label: "Linked Units", get: (c) => linkedUnits(c).join("; "), w: 60 },
+      { label: "Company", key: "name", w: 30 }, { label: "Confidence", key: "confidence", w: 14 },
+      { label: "Records", key: "total_edges", w: 12 }, { label: "Linked Units", get: (c) => linkedUnits(c).join("; "), w: 60 },
     ];
     const draw = () => {
       const q = ($("#co-q").value || "").toLowerCase();
@@ -569,9 +607,19 @@
       lastRows = rows;
       $("#co-count").textContent = `${rows.length.toLocaleString()} of ${companies.length.toLocaleString()} companies`;
       $("#co-body").innerHTML = rows.length ? companyTable(rows) : emptyHTML("No companies match", "Try a different name or confidence filter.");
+      syncQuery("companies", { q: $("#co-q").value.trim(), conf, sort: sort === "records" ? "" : sort });
     };
+    const toggleRow = (row) => {
+      const d = row.nextElementSibling; if (!d || !d.classList.contains("co-detail")) return;
+      const open = !d.hasAttribute("hidden");
+      if (open) d.setAttribute("hidden", ""); else d.removeAttribute("hidden");
+      row.classList.toggle("open", !open);
+      const ch = row.querySelector(".co-chev"); if (ch) ch.textContent = open ? "▸" : "▾";
+    };
+    $("#co-body").addEventListener("click", (e) => { if (e.target.closest("a")) return; const row = e.target.closest("tr.co-row"); if (row) toggleRow(row); });
     wireExport("co-exp", () => ({ title: "UNC-Linked Companies", filename: "UNC_Companies", columns: CO_COLS, rows: lastRows }));
     ["co-q", "co-conf", "co-sort"].forEach((id) => { const el = document.getElementById(id); el.addEventListener(id === "co-q" ? "input" : "change", draw); });
+    wireListNav("co-body", "tr.co-row", toggleRow);
     draw();
   }
 
@@ -915,6 +963,8 @@
     $("#f-tier").innerHTML = `<option value="">All tiers</option>` + tiers.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
     if (query.area) $("#f-area").value = query.area;
     if (query.tier) $("#f-tier").value = query.tier;
+    if (query.status) $("#f-status").value = query.status;
+    if (query.q) $("#f-q").value = query.q;
 
     let lastRows = [];
     const P_EXPORT_COLS = [
@@ -947,6 +997,7 @@
       $("#p-count").textContent = `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} partnerships`;
       $("#p-body").innerHTML = filtered.length ? (CAN_EDIT ? editPartnershipTable(filtered, unitOpts) : partnershipTable(filtered))
         : emptyHTML("No partnerships match", rows.length ? "Loosen the filters to see more." : (CAN_EDIT ? "Add one to get started — click ＋ Add Partnership." : "No partnerships in this view."));
+      syncQuery("partnerships", { q: $("#f-q").value.trim(), area, status, tier });
     };
     wireExport("p-exp", () => ({ title: "UNC Partnerships", filename: "UNC_Partnerships", columns: P_EXPORT_COLS, rows: lastRows }));
     ["f-q", "f-area", "f-status", "f-tier"].forEach((id) => { const el = document.getElementById(id); el.addEventListener(id === "f-q" ? "input" : "change", draw); });
@@ -1020,16 +1071,16 @@
     </div>`;
   }
   let FACULTY_CACHE = null;
-  async function renderFaculty() {
+  async function renderFaculty(query = {}) {
     const v = elView();
     v.innerHTML = `<div class="page wrap">
       <div class="page-head"><div class="card-top"><div><span class="eyebrow">Directory</span><h1 class="page-title">UNC Faculty</h1>
-        <p class="page-sub">Researchers mapped to units through public grants, papers and trials. Filter by name; click a unit to see its evidence.</p></div>
+        <p class="page-sub">Researchers mapped to units through public grants, papers and trials. Filter by name; <kbd class="ikbd">↑</kbd><kbd class="ikbd">↓</kbd>+<kbd class="ikbd">↵</kbd> to open a profile.</p></div>
         <div class="head-actions">${exportButtons("fac-exp")}</div></div></div>
       ${coverageBar()}
       <div class="toolbar">
-        <input type="search" id="fac-search" placeholder="Filter by faculty name…" />
-        <label style="font-size:13px;color:var(--muted)"><input type="checkbox" id="fac-partners" /> with partnerships only</label>
+        <input type="search" id="fac-search" placeholder="Filter by faculty name…" value="${esc(query.q || "")}" />
+        <label style="font-size:13px;color:var(--muted)"><input type="checkbox" id="fac-partners" ${query.partners ? "checked" : ""}/> with partnerships only</label>
         <span class="count" id="fac-count"></span>
       </div>
       <div id="fac-grid">${skeletonGrid(9)}</div>
@@ -1064,10 +1115,12 @@
         ? `<div class="more-row"><button class="btn ghost" id="fac-more">Show ${Math.min(STEP, rows.length - shown.length).toLocaleString()} more</button></div>` : "";
       $("#fac-grid").innerHTML = shown.length ? `<div class="grid">${shown.map(facultyCard).join("")}</div>${more}` : emptyHTML("No faculty match", "Try a different name.");
       const mb = $("#fac-more"); if (mb) mb.addEventListener("click", () => { facShown += STEP; draw(); });
+      syncQuery("faculty", { q: $("#fac-search").value.trim(), partners: $("#fac-partners").checked ? "1" : "" });
     };
     wireExport("fac-exp", () => ({ title: "UNC Faculty", filename: "UNC_Faculty", columns: FAC_EXPORT_COLS, rows: lastRows }));
     $("#fac-search").addEventListener("input", () => { facShown = STEP; draw(); });
     $("#fac-partners").addEventListener("change", () => { facShown = STEP; draw(); });
+    wireListNav("fac-grid", ".card", (card) => { const a = card.querySelector("h3 a"); if (a) location.hash = a.getAttribute("href"); });
     draw();
   }
 
@@ -1566,11 +1619,11 @@
       switch (name) {
         case "": return await renderHome();
         case "search": return await renderSearch(parts.slice(1).join("/") || "");
-        case "companies": return await renderCompanies();
+        case "companies": return await renderCompanies(query);
         case "units": return await renderUnits();
         case "unit": return await renderUnit(parts[1], parts[2]);
         case "partnerships": return await renderPartnerships(query);
-        case "faculty": return parts[1] ? await renderFacultyProfile(parts[1]) : await renderFaculty();
+        case "faculty": return parts[1] ? await renderFacultyProfile(parts[1]) : await renderFaculty(query);
         case "network": return await renderNetwork();
         case "about": return await renderAbout();
         default: elView().innerHTML = `<div class="page wrap">${emptyHTML("Page not found", "That route doesn't exist. Head back to search.")}</div>`;
