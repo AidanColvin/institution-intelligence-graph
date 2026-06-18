@@ -103,6 +103,16 @@ button { font-family:inherit; cursor:pointer; }
 .search-box .go:hover { background:var(--accent-strong); }
 .search-box .go:active { transform:scale(0.97); }
 .more-row { display:flex; justify-content:center; margin-top:22px; }
+/* "data verified" trust strip (home hero) */
+.verified-strip { display:inline-flex; align-items:center; gap:9px; flex-wrap:wrap; justify-content:center;
+  margin:22px auto 0; padding:9px 18px; border-radius:var(--r-pill); font-size:13px; color:var(--muted);
+  background:var(--accent-soft); border:1px solid var(--accent-line); text-decoration:none;
+  transition:background .18s var(--ease,ease); }
+.verified-strip:hover { background:#e3effb; }
+.verified-strip b { color:var(--text); font-weight:600; }
+.verified-strip .vs-check { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px;
+  border-radius:50%; background:var(--accent); color:#fff; font-size:11px; font-weight:700; flex:none; }
+.verified-strip .vs-more { color:var(--accent-strong); font-weight:600; }
 /* provenance / "how to read this" note above data tables */
 .data-note { display:flex; gap:10px; align-items:flex-start; margin:2px 0 18px; max-width:100%;
   background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:var(--r-md,12px);
