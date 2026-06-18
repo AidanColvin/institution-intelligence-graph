@@ -1485,6 +1485,56 @@
     }));
   }
 
+  // ── ⌘K command palette: instant search + jump-to-page ────────────────────────
+  const CMDK_PAGES = [
+    { label: "Search", hash: "#/" }, { label: "Companies", hash: "#/companies" },
+    { label: "Schools & Units", hash: "#/units" }, { label: "Partnerships", hash: "#/partnerships" },
+    { label: "Faculty", hash: "#/faculty" }, { label: "Network", hash: "#/network" }, { label: "About", hash: "#/about" },
+  ];
+  let _cmdkCompanies = null;
+  function openPalette() {
+    if (document.getElementById("cmdk")) return;
+    const back = document.createElement("div"); back.id = "cmdk"; back.className = "cmdk-back";
+    back.innerHTML = `<div class="cmdk" role="dialog" aria-modal="true" aria-label="Quick search">
+      <div class="cmdk-in"><span class="cmdk-in-ic">⌕</span><input id="cmdk-input" type="search" autocomplete="off" placeholder="Search a company or jump to a page…" aria-label="Quick search" /></div>
+      <div class="cmdk-list" id="cmdk-list"></div>
+      <div class="cmdk-foot"><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>
+    </div>`;
+    document.body.appendChild(back);
+    const input = back.querySelector("#cmdk-input");
+    const list = back.querySelector("#cmdk-list");
+    let items = [], active = 0;
+    if (_cmdkCompanies === null) getGraph().then((g) => { _cmdkCompanies = g.companies || []; render(); }).catch(() => { _cmdkCompanies = []; });
+    const close = () => back.remove();
+    const choose = (i) => { const it = items[i]; if (!it) return; close(); location.hash = it.kind === "page" ? it.p.hash : "#/search/" + enc(it.kind === "company" ? it.c.name : it.q); };
+    const move = (d) => { if (!items.length) return; active = (active + d + items.length) % items.length; [...list.querySelectorAll(".cmdk-item")].forEach((el, i) => el.classList.toggle("active", i === active)); const cur = list.querySelector(".cmdk-item.active"); if (cur) cur.scrollIntoView({ block: "nearest" }); };
+    const render = () => {
+      const q = input.value.trim();
+      const comps = q ? rankCompanies(q, _cmdkCompanies, 6) : [];
+      const pages = CMDK_PAGES.filter((p) => !q || p.label.toLowerCase().includes(q.toLowerCase()));
+      items = [...comps.map((c) => ({ kind: "company", c })), ...(q ? [{ kind: "topic", q }] : []), ...pages.map((p) => ({ kind: "page", p }))];
+      active = 0;
+      list.innerHTML = items.length ? items.map((it, i) => {
+        const a = i === 0 ? " active" : "";
+        if (it.kind === "company") return `<div class="cmdk-item${a}" data-i="${i}"><span class="cmdk-ic">◆</span><span class="cmdk-lbl">${esc(it.c.name)}</span><span class="cmdk-rt">${confBadge(it.c.confidence)} ${(it.c.total_edges || 0).toLocaleString()}</span></div>`;
+        if (it.kind === "topic") return `<div class="cmdk-item${a}" data-i="${i}"><span class="cmdk-ic">⌕</span><span class="cmdk-lbl">Search “${esc(it.q)}” as a topic</span></div>`;
+        return `<div class="cmdk-item${a}" data-i="${i}"><span class="cmdk-ic">›</span><span class="cmdk-lbl">Go to ${esc(it.p.label)}</span></div>`;
+      }).join("") : (q ? `<div class="cmdk-empty">No matches — press ↵ to search “${esc(q)}”</div>` : `<div class="cmdk-empty">Type a company name, a topic, or a page</div>`);
+      if (!items.length && q) items = [{ kind: "topic", q }];
+      list.querySelectorAll(".cmdk-item").forEach((el) => el.addEventListener("mousedown", (e) => { e.preventDefault(); choose(+el.dataset.i); }));
+    };
+    input.addEventListener("input", render);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+      else if (e.key === "Enter") { e.preventDefault(); choose(active); }
+      else if (e.key === "Escape") { e.preventDefault(); close(); }
+    });
+    back.addEventListener("mousedown", (e) => { if (e.target === back) close(); });
+    render();
+    setTimeout(() => input.focus(), 20);
+  }
+
   // ── router ─────────────────────────────────────────────────────────────────────
   function parseHash() {
     let h = location.hash.replace(/^#\/?/, "");
@@ -1542,6 +1592,18 @@
     // Delegated Retry handler (replaces an inline onclick so the CSP can forbid
     // inline script entirely).
     document.addEventListener("click", (e) => { if (e.target.closest("[data-reload]")) location.reload(); });
+
+    // ⌘K / Ctrl-K (or "/") opens the command palette; nav button opens it too.
+    const isMac = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || "");
+    const kbd = document.getElementById("cmdk-kbd"); if (kbd) kbd.textContent = isMac ? "⌘K" : "Ctrl K";
+    const trig = document.getElementById("cmdk-open"); if (trig) trig.addEventListener("click", openPalette);
+    document.addEventListener("keydown", (e) => {
+      if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) { e.preventDefault(); openPalette(); return; }
+      const el = document.activeElement;
+      const typing = el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
+      if (e.key === "/" && !typing && !document.getElementById("cmdk")) { e.preventDefault(); openPalette(); }
+    });
+
     window.addEventListener("hashchange", route);
     route();
   }

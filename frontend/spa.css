@@ -113,6 +113,48 @@ button { font-family:inherit; cursor:pointer; }
 .verified-strip .vs-check { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px;
   border-radius:50%; background:var(--accent); color:#fff; font-size:11px; font-weight:700; flex:none; }
 .verified-strip .vs-more { color:var(--accent-strong); font-weight:600; }
+
+/* ── smooth view transitions (Apple-ish content settle) ──────────────── */
+@keyframes viewIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+#view > .page, #view > .hero, #view > section { animation:viewIn .34s cubic-bezier(.22,.61,.36,1) both; }
+@media (prefers-reduced-motion: reduce) { #view > * { animation:none !important; } }
+
+/* ── nav quick-search trigger (⌘K) ───────────────────────────────────── */
+.nav-right { display:flex; align-items:center; gap:10px; }
+.cmdk-trigger { display:inline-flex; align-items:center; gap:8px; padding:6px 10px 6px 12px;
+  background:var(--surface-2,#f5f5f7); border:1px solid var(--hairline-2); border-radius:var(--r-pill);
+  font-size:13px; color:var(--muted); cursor:pointer; transition:background .18s var(--ease),border-color .18s var(--ease); }
+.cmdk-trigger:hover { background:#fff; border-color:var(--hairline); color:var(--text); }
+.cmdk-tr-ic { font-size:14px; color:var(--faint); }
+.cmdk-tr-kbd { font-size:11px; font-weight:600; color:var(--faint); background:var(--card); border:1px solid var(--hairline-2);
+  border-radius:6px; padding:1px 6px; }
+@media (max-width:760px){ .cmdk-tr-lbl, .cmdk-tr-kbd { display:none; } .cmdk-trigger { padding:7px 10px; } }
+
+/* ── ⌘K command palette ──────────────────────────────────────────────── */
+.cmdk-back { position:fixed; inset:0; z-index:120; background:rgba(20,20,24,0.28);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); display:flex; align-items:flex-start;
+  justify-content:center; padding:14vh 16px 16px; animation:viewIn .18s ease both; }
+.cmdk { width:100%; max-width:560px; background:var(--card); border:1px solid var(--hairline);
+  border-radius:18px; box-shadow:0 24px 70px rgba(0,0,0,0.28); overflow:hidden;
+  animation:cmdkIn .22s cubic-bezier(.22,.61,.36,1) both; }
+@keyframes cmdkIn { from { opacity:0; transform:translateY(-8px) scale(.98); } to { opacity:1; transform:none; } }
+.cmdk-in { display:flex; align-items:center; gap:11px; padding:15px 18px; border-bottom:1px solid var(--hairline-2); }
+.cmdk-in-ic { font-size:18px; color:var(--faint); }
+.cmdk-in input { flex:1; border:none; outline:none; background:transparent; font-size:17px; color:var(--text); letter-spacing:-.01em; }
+.cmdk-in input::placeholder { color:var(--faint); }
+.cmdk-list { max-height:46vh; overflow-y:auto; padding:6px; }
+.cmdk-item { display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:10px; cursor:pointer; }
+.cmdk-item.active, .cmdk-item:hover { background:var(--accent-soft); }
+.cmdk-ic { width:18px; text-align:center; color:var(--faint); flex:none; }
+.cmdk-lbl { flex:1; font-size:14.5px; font-weight:500; color:var(--text); letter-spacing:-.01em;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cmdk-rt { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); white-space:nowrap; }
+.cmdk-empty { padding:20px 14px; color:var(--muted); font-size:14px; text-align:center; }
+.cmdk-foot { display:flex; gap:16px; padding:9px 16px; border-top:1px solid var(--hairline-2);
+  font-size:11.5px; color:var(--faint); }
+.cmdk-foot kbd, .cmdk-foot span { display:inline-flex; align-items:center; gap:4px; }
+.cmdk-foot kbd { font-family:inherit; font-size:11px; background:var(--surface-2,#f5f5f7);
+  border:1px solid var(--hairline-2); border-radius:5px; padding:1px 5px; color:var(--muted); }
 /* provenance / "how to read this" note above data tables */
 .data-note { display:flex; gap:10px; align-items:flex-start; margin:2px 0 18px; max-width:100%;
   background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:var(--r-md,12px);
