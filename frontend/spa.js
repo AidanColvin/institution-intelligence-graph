@@ -95,7 +95,14 @@
   const skeletonGrid = (n = 8) => `<div class="grid">${Array.from({ length: n }, () => `<div class="card sk-card"><div class="sk sk-line w55"></div><div class="sk sk-line w90"></div><div class="sk sk-line w35"></div></div>`).join("")}</div>`;
   const skeletonTable = (n = 10) => `<div class="table-wrap sk-wrap">${Array.from({ length: n }, () => `<div class="sk-row"><div class="sk sk-line w30"></div><div class="sk sk-line w16"></div><div class="sk sk-line w44"></div><div class="sk sk-line w10"></div></div>`).join("")}</div>`;
   function errorHTML(err, ctx) { const f = friendlyError(err, ctx); return `<div class="error"><h3>${esc(f.title)}</h3><p>${esc(f.msg)}</p><p style="margin-top:14px"><button class="btn ghost" data-reload>Retry</button></p></div>`; }
-  function emptyHTML(title, msg) { return `<div class="empty"><h3>${esc(title)}</h3><p>${esc(msg)}</p></div>`; }
+  // `resetIds` (array of input element ids) renders a one-click "Clear filters"
+  // button; a delegated [data-reset] handler (see boot) clears those inputs and
+  // re-runs the view's draw. Pass it only when a filter is actually narrowing.
+  function emptyHTML(title, msg, resetIds) {
+    const action = (resetIds && resetIds.length)
+      ? `<p style="margin-top:16px"><button class="btn ghost" data-reset="${esc(resetIds.join(","))}">Clear filters</button></p>` : "";
+    return `<div class="empty"><h3>${esc(title)}</h3><p>${esc(msg)}</p>${action}</div>`;
+  }
   const enc = encodeURIComponent;
   // recent searches (palette + future use), capped & deduped in localStorage
   const RECENT_KEY = "iig_recent";
@@ -610,7 +617,7 @@
         : (b.total_edges || 0) - (a.total_edges || 0));
       lastRows = rows;
       $("#co-count").textContent = `${rows.length.toLocaleString()} of ${companies.length.toLocaleString()} companies`;
-      $("#co-body").innerHTML = rows.length ? companyTable(rows) : emptyHTML("No companies match", "Try a different name or confidence filter.");
+      $("#co-body").innerHTML = rows.length ? companyTable(rows) : emptyHTML("No companies match", "Try a different name or confidence filter.", ["co-q", "co-conf"]);
       syncQuery("companies", { q: $("#co-q").value.trim(), conf, sort: sort === "records" ? "" : sort });
     };
     const toggleRow = (row) => {
@@ -743,7 +750,7 @@
         : (a.unit_name || "").localeCompare(b.unit_name || ""));
       lastRows = rows;
       $("#u-count").textContent = `${rows.length} of ${units.length} units`;
-      $("#u-grid").innerHTML = rows.length ? unitsTable(rows, schools) : emptyHTML("No units match", "Try a different name or type, or add a new unit.");
+      $("#u-grid").innerHTML = rows.length ? unitsTable(rows, schools) : emptyHTML("No units match", "Try a different name or type, or add a new unit.", ["u-search", "u-type"]);
     };
     wireExport("u-exp", () => ({ title: "UNC Schools & Units", filename: "UNC_Units", columns: UNIT_EXPORT_COLS, rows: lastRows }));
     $("#u-search").addEventListener("input", draw);
@@ -1000,7 +1007,7 @@
       lastRows = filtered;
       $("#p-count").textContent = `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} partnerships`;
       $("#p-body").innerHTML = filtered.length ? (CAN_EDIT ? editPartnershipTable(filtered, unitOpts) : partnershipTable(filtered))
-        : emptyHTML("No partnerships match", rows.length ? "Loosen the filters to see more." : (CAN_EDIT ? "Add one to get started — click ＋ Add Partnership." : "No partnerships in this view."));
+        : emptyHTML("No partnerships match", rows.length ? "Loosen the filters to see more." : (CAN_EDIT ? "Add one to get started — click ＋ Add Partnership." : "No partnerships in this view."), rows.length ? ["f-q", "f-area", "f-status", "f-tier"] : null);
       syncQuery("partnerships", { q: $("#f-q").value.trim(), area, status, tier });
     };
     wireExport("p-exp", () => ({ title: "UNC Partnerships", filename: "UNC_Partnerships", columns: P_EXPORT_COLS, rows: lastRows }));
@@ -1117,7 +1124,7 @@
       $("#fac-count").textContent = `${shown.length.toLocaleString()} of ${rows.length.toLocaleString()} shown`;
       const more = rows.length > shown.length
         ? `<div class="more-row"><button class="btn ghost" id="fac-more">Show ${Math.min(STEP, rows.length - shown.length).toLocaleString()} more</button></div>` : "";
-      $("#fac-grid").innerHTML = shown.length ? `<div class="grid">${shown.map(facultyCard).join("")}</div>${more}` : emptyHTML("No faculty match", "Try a different name.");
+      $("#fac-grid").innerHTML = shown.length ? `<div class="grid">${shown.map(facultyCard).join("")}</div>${more}` : emptyHTML("No faculty match", "Try a different name or turn off “with partnerships only”.", ["fac-search", "fac-partners"]);
       const mb = $("#fac-more"); if (mb) mb.addEventListener("click", () => { facShown += STEP; draw(); });
       syncQuery("faculty", { q: $("#fac-search").value.trim(), partners: $("#fac-partners").checked ? "1" : "" });
     };
@@ -1659,6 +1666,19 @@
     // Delegated Retry handler (replaces an inline onclick so the CSP can forbid
     // inline script entirely).
     document.addEventListener("click", (e) => { if (e.target.closest("[data-reload]")) location.reload(); });
+    // "Clear filters" on empty states: reset the named inputs and re-run the
+    // owning view's draw via the events its listeners already watch.
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-reset]"); if (!b) return;
+      (b.getAttribute("data-reset") || "").split(",").map((s) => s.trim()).filter(Boolean).forEach((id) => {
+        const el = document.getElementById(id); if (!el) return;
+        if (el.tagName === "SELECT") el.selectedIndex = 0;
+        else if (el.type === "checkbox" || el.type === "radio") el.checked = false;
+        else el.value = "";
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    });
     // copy a shareable link to the current view
     document.addEventListener("click", async (e) => {
       const b = e.target.closest("[data-copylink]"); if (!b) return;
